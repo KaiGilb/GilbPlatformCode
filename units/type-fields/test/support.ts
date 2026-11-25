@@ -40,6 +40,8 @@ export interface FakeMasterOptions {
   noSelector?: boolean;
   /** Extra or replaced required-slot terms, by address. */
   requiredTerms?: Record<string, unknown>[];
+  /** The field terms served instead of the fixture's (a test's labelled stand-in, never a live answer). */
+  fieldTerms?: Record<string, unknown>[];
   /** The type names `GET /base/t/<Name>` answers 200 for, besides every type the fixture's terms name. */
   knownTypes?: string[];
 }
@@ -71,7 +73,7 @@ export function fakeMaster(opts: FakeMasterOptions = {}): FakeMaster {
     if (opts.status !== undefined) return new Response(null, { status: opts.status });
     if (u.pathname === "/base/vocab" && u.searchParams.get("status") === "all") {
       const carries = u.searchParams.get("carries");
-      if (carries === "a:fieldOf") return page(carries, fixture.carriesSpellings.fieldOf, fixture.fieldTerms, url);
+      if (carries === "a:fieldOf") return page(carries, fixture.carriesSpellings.fieldOf, opts.fieldTerms ?? fixture.fieldTerms, url);
       if (carries === "a:requiredSlot") return page(carries, fixture.carriesSpellings.requiredSlot, opts.requiredTerms ?? fixture.requiredTerms, url);
     }
     const type = /^\/base\/t\/([^/]+)$/.exec(u.pathname)?.[1];

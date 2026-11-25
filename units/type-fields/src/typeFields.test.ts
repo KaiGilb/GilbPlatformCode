@@ -98,7 +98,7 @@ describe("type-fields", () => {
       expect(byAnchor(out.fields, "a:goGivenByPrincipal").recordType).toBeNull();
     });
 
-    test("t:Person: a field's own record type, a term with two spellings, and a term that states no cardinality", async () => {
+    test("t:Person: a field's own record type, a term with two spellings, and a term the master states as multi (a:email)", async () => {
       const master = fakeMaster();
       const out = await readTypeFields({ vedaOrigin: ORIGIN, fetchImpl: master.fetchImpl }, "Person");
       const employment = byAnchor(out.fields, "a:employment");
@@ -107,12 +107,30 @@ describe("type-fields", () => {
       // The term retires `a:address` (its a:deprecatedNotation), so one current spelling is left to write; both are still read.
       expect(address.writeKey).toBe("a:postalAddress");
       expect(address.readKeys).toEqual(["a:postalAddress", "postalAddress", "a:address", "address"]);
+      // Live since 2026-11-25T12:22:03Z (Agent.Concept, inbox f044037e): a:email and a:phone are multi; before, they stated none.
       const email = byAnchor(out.fields, "a:email");
-      expect([email.cardinality, email.cardinalityAsServed]).toEqual([null, null]);
+      expect([email.cardinality, email.cardinalityAsServed]).toEqual(["multi", "multi"]);
+    });
+
+    test("a term that states no cardinality (a:measurementType, the one live field term left without it) is read as not stated", async () => {
+      const master = fakeMaster();
+      const out = await readTypeFields({ vedaOrigin: ORIGIN, fetchImpl: master.fetchImpl }, "MeasurementFact");
+      const kind = byAnchor(out.fields, "a:measurementType");
+      expect([kind.cardinality, kind.cardinalityAsServed]).toEqual([null, null]);
+    });
+
+    test("a:checksStandard is multi as the master serves it now", async () => {
+      const master = fakeMaster();
+      const out = await readTypeFields({ vedaOrigin: ORIGIN, fetchImpl: master.fetchImpl }, "TopicCheck");
+      const checks = byAnchor(out.fields, "a:checksStandard");
+      expect([checks.cardinality, checks.cardinalityAsServed]).toEqual(["multi", "multi"]);
     });
 
     test("a cardinality word that is not single or multi is kept as served and read as not stated", async () => {
-      const master = fakeMaster();
+      // ⚠ A labelled stand-in: a:checksStandard served "multiple" until 2026-11-25T12:22:03Z; no live term serves such a word now, so
+      // the fixture's term is copied with that one value put back, to keep the reader's guard tested.
+      const standIn = fixture.fieldTerms.map((d) => (d["a:predicateAttribute"] === "a:checksStandard" ? { ...d, "a:cardinality": "multiple" } : d));
+      const master = fakeMaster({ fieldTerms: standIn });
       const out = await readTypeFields({ vedaOrigin: ORIGIN, fetchImpl: master.fetchImpl }, "TopicCheck");
       const checks = byAnchor(out.fields, "a:checksStandard");
       expect([checks.cardinality, checks.cardinalityAsServed]).toEqual([null, "multiple"]);
@@ -290,9 +308,9 @@ describe("type-fields", () => {
       for (const key of ["postalAddress", "a:address", "address"]) expect(index.get(key)).toBe(address);
     });
 
-    test("holds each of the 37 terms once, and says of none that it is required: that is a fact about one type", () => {
+    test("holds each of the 38 terms once, and says of none that it is required: that is a fact about one type", () => {
       const fields = [...new Set(fieldIndex(declarations).values())];
-      expect(fields.length).toBe(37);
+      expect(fields.length).toBe(38);
       expect(fields.some((f) => f.required)).toBe(false);
     });
 

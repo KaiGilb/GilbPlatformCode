@@ -7,7 +7,8 @@
   ],
   "date": "2026-11-25T01:07Z",
   "changed": "the host is rewritten to ontology.platform.example.test; only the terms of a few types are kept; of each term only the keys the field reader reads are kept (@id, a:predicateAttribute, a:deprecatedNotation, a:label, a:encoding, a:cardinality, a:fieldOf, a:valueSet, a:valueSetClosure, a:fieldRecordType, a:endpoint, a:ontologyStatus, a:nodeKind, a:requiredSlot), each exactly as served.",
-  "keptTerms": 37
+  "keptTerms": 38,
+  "refreshed": "2026-11-25T12:22Z: the cardinalities Agent.Concept changed live at 2026-11-25T12:22:03Z (inbox f044037e) are copied from the saved live answer of GET /base/vocab?status=all&carries=a:fieldOf&limit=1000 on veda.gilb.com (851 terms, saved as table-view-concept-q12/after/carrier-a_fieldOf.json): a:email None -> 'multi'; a:name None -> 'single'; a:phone None -> 'multi'; a:postalAddress|a:address None -> 'single'; a:url None -> 'single'; a:checksStandard 'multiple' -> 'multi'; a:body None -> 'single'. Added a:measurementType (the one live field term that states no cardinality), its kept keys as served."
  },
  "context": [
   {
@@ -469,7 +470,8 @@
      "@id": "https://ontology.platform.example.test/base/t/TeamRegistrationRequest"
     }
    ],
-   "a:ontologyStatus": "Approved"
+   "a:ontologyStatus": "Approved",
+   "a:cardinality": "multi"
   },
   {
    "@id": "https://ontology.platform.example.test/base/t/Employment",
@@ -590,7 +592,8 @@
      "@id": "https://ontology.platform.example.test/base/t/CatalogEntry"
     }
    ],
-   "a:ontologyStatus": "Approved"
+   "a:ontologyStatus": "Approved",
+   "a:cardinality": "single"
   },
   {
    "@id": "https://ontology.platform.example.test/base/t/OnlineAccount",
@@ -624,7 +627,8 @@
      "@id": "https://ontology.platform.example.test/base/t/Organization"
     }
    ],
-   "a:ontologyStatus": "Suggested"
+   "a:ontologyStatus": "Suggested",
+   "a:cardinality": "multi"
   },
   {
    "@id": "https://ontology.platform.example.test/base/t/PictureHash",
@@ -654,7 +658,8 @@
      "@id": "https://ontology.platform.example.test/base/t/Organization"
     }
    ],
-   "a:ontologyStatus": "Suggested"
+   "a:ontologyStatus": "Suggested",
+   "a:cardinality": "single"
   },
   {
    "@id": "https://ontology.platform.example.test/base/t/PostVisibility",
@@ -1124,7 +1129,8 @@
      "@id": "https://ontology.platform.example.test/base/t/PublishedWebsite"
     }
    ],
-   "a:ontologyStatus": "Suggested"
+   "a:ontologyStatus": "Suggested",
+   "a:cardinality": "single"
   },
   {
    "@id": "https://ontology.platform.example.test/base/t/WrittenAsAgent",
@@ -1363,7 +1369,7 @@
    "a:predicateAttribute": "a:checksStandard",
    "a:label": "checksStandard",
    "a:encoding": "inline-literal:text",
-   "a:cardinality": "multiple",
+   "a:cardinality": "multi",
    "a:fieldOf": [
     {
      "@id": "https://ontology.platform.example.test/base/t/TopicCheck"
@@ -1439,7 +1445,24 @@
      "@id": "https://ontology.platform.example.test/base/t/ContentGuideProposal"
     }
    ],
-   "a:ontologyStatus": "Approved"
+   "a:ontologyStatus": "Approved",
+   "a:cardinality": "single"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/MeasurementType",
+   "a:predicateAttribute": "a:measurementType",
+   "a:label": "Measurement Type",
+   "a:encoding": "inline-literal:text",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/MeasurementFact"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Rule"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
   }
  ],
  "requiredTerms": [
