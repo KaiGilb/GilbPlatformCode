@@ -198,6 +198,10 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
   const totalWidth = skeleton && columns.length === 0 ? NAME_WIDTH + SKELETON_FIELD_COLUMNS * FIELD_WIDTH : grid.getTotalSize();
   const frozenCell = "sticky left-0 z-[1] bg-[var(--surface)] border-r border-[var(--line)]";
   const cellBase = "flex min-w-0 items-center px-2.5 text-[13px] text-[var(--ink)]";
+  // The focused row's ring is drawn by its cells (a line above and below each, and one at the row's left), because the frozen Name cell
+  // lies over the row and would hide a ring drawn on the row itself.
+  const focusLines = " group-focus-visible:shadow-[inset_0_2px_0_var(--accent),inset_0_-2px_0_var(--accent)]";
+  const focusLinesFirst = " group-focus-visible:shadow-[inset_2px_0_0_var(--accent),inset_0_2px_0_var(--accent),inset_0_-2px_0_var(--accent)]";
 
   if (narrow) {
     return (
@@ -324,7 +328,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                     if (e.target === e.currentTarget) setFocusId(row.id);
                   }}
                   className={
-                    "group absolute left-0 top-0 grid border-b border-[var(--line-2)] outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
+                    "group absolute left-0 top-0 grid border-b border-[var(--line-2)] outline-none"
                   }
                   style={{ gridTemplateColumns: template, width: totalWidth, height: item.size, transform: `translateY(${item.start}px)` }}
                 >
@@ -332,7 +336,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                     const isName = cell.column.id === NAME_COLUMN_ID;
                     if (isName) {
                       return (
-                        <div key={cell.id} role="rowheader" aria-colindex={1} className={cellBase + " gap-1.5 pl-1 " + frozenCell}>
+                        <div key={cell.id} role="rowheader" aria-colindex={1} className={cellBase + " gap-1.5 pl-1 " + frozenCell + focusLinesFirst}>
                           <button
                             type="button"
                             tabIndex={-1}
@@ -352,7 +356,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                       );
                     }
                     return (
-                      <div key={cell.id} role="gridcell" aria-colindex={i + 1} data-column-id={cell.column.id} className={cellBase + " border-r border-[var(--line-2)] " + (selected ? "bg-[var(--sel)]" : "")}>
+                      <div key={cell.id} role="gridcell" aria-colindex={i + 1} data-column-id={cell.column.id} className={cellBase + " border-r border-[var(--line-2)] " + (selected ? "bg-[var(--sel)]" : "") + focusLines}>
                         <CellView cell={cell.getValue() as Cell} renderRef={renderRef} />
                       </div>
                     );
