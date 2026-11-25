@@ -15,7 +15,7 @@ A small Node program, run by the person on their own computer and accepting conn
 - A hand-off to another agent runs as a nested turn of the same kind, one level, up to four at a time, sharing the turn's budget of tool calls. `GET /v1/hello` also reports `build`, the package version of this bridge.
 - The first time that budget is spent, the person's turn is sent one `budget_spent` event (`{ type: "budget_spent", maxToolCalls }`) and its final `message` carries `budgetSpent: true`.
 - A browser origin never contains a quote mark; `--allow-origin 'https://a"b.example'` is refused.
-- Commands the person runs: `--install` (macOS login item), `--uninstall`, `--status`, `--code`, `--unpair-all`, `--allow-origin <origin>` (repeatable), `--port`, `--claude`, `--state-dir`, `--label`.
+- Commands the person runs: `--install` (macOS login item), `--uninstall`, `--status`, `--code`, `--unpair-all`, `--allow-origin <origin>` (repeatable), `--port`, `--claude`, `--codex`, `--state-dir`, `--label`.
 - `bridge/vite-plugin.mjs` is `claudeCodeBridgeFile({ defaultAllowedOrigins })`: it serves `<base>claude-code-bridge.mjs` in dev and emits it into the build, with the host's origins written into the one `DEFAULT_ALLOWED_ORIGINS` line.
 
 The source is TypeScript in `src/`. The files in `bridge/` are built from it (`npm run build:bridge`) and committed, because a person runs the file as it is. A test fails if the committed files differ from a fresh build.
@@ -26,7 +26,7 @@ The source is TypeScript in `src/`. The files in `bridge/` are built from it (`n
 - Not a server. Nothing here runs on a host; no vault, no token and no key of the host is ever held.
 - Not an Anthropic API client. It cannot run on an API key.
 - Not Linux service support. `--install` writes a macOS LaunchAgent, or on Windows a per-user start-up entry (see "Windows"); running the file in a terminal works wherever Node and `claude` do.
-- Not exported from the package root: there is no browser-safe code in it, so the package has no `.` entry. It exports `./bridge.mjs`, `./vite` (with types) and `./fake-claude.mjs`.
+- Not exported from the package root: there is no browser-safe code in it, so the package has no `.` entry. It exports `./bridge.mjs`, `./vite` (with types), `./fake-claude.mjs` and `./fake-codex.mjs`.
 
 ## How to take it
 
@@ -341,6 +341,22 @@ Repository `KaiGilb/gilb-claude-code`, path `bridge/`, tag v0.2.0, commit `3b032
 
 Changed on the way in, and only this: the source is TypeScript (type annotations; the build removes them again); the built-in `DEFAULT_ALLOWED_ORIGINS` is `[]` where v0.2.0 listed two Gilb origins, and `bridge/allowed-origins.json` is not carried; `claudeCodeBridgeFile` takes `defaultAllowedOrigins` and writes them into that one line; two comments that named the Gilb defaults. Tests: the two that asserted the default equals the Gilb origins or `allowed-origins.json` now assert the default is empty, one that listed the defaults next to an added origin now expects the added origin alone, and Gilb host names used as inputs are `*.example.test`.
 
+## Engines (0.4.0)
+
+A page sends `engine` on `POST /v1/turn`: `"claude"` or `"codex"`. Leaving it out means Claude Code, and that turn is unchanged (the same checks, the same command, the same events). Any other value is `400` `{ error: "That engine is not known." }`. A hand-off runs on its parent's engine. A hand-off that names a different engine is `400` `{ error: "A hand-off runs on its turn's engine." }`.
+
+A paired `GET /v1/hello` also has `engines`. One entry is Claude Code (ready, code turns, pictures, delegateCoding, the model aliases). The other is Codex: whether it is installed, its version, whether this bridge supports that version, the account kind, whether it is ready, its models and efforts, and `checking` or `reason` when those apply. An unpaired hello has no `engines`. Hello never waits for the Codex probe. The probe runs once in the background at start, and again when a paired hello finds a result older than 30 seconds.
+
+A Codex chat turn starts `codex app-server`. The bridge finds `codex` the way it finds `claude` (PATH, then beside node, then the usual install folders), or uses `--codex PATH`. `--install` does not record `--codex` in this batch. The child does not get OpenAI key variables (`OPENAI_*`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `AZURE_OPENAI_API_KEY`). `CODEX_HOME` stays, so the person's own ChatGPT sign-in is the one that runs. The bridge asks Codex to confirm that sign-in is ChatGPT, reads the person's MCP server names, turns those servers off, and adds this chat's `gilb` server with approval already given (`tool_timeout_sec` 2000, so a hand-off can still take 30 minutes). The thread is read-only, approval is `never`, and web search is disabled. Before the prompt is sent, the bridge checks that Codex reported that sandbox, that `gilb` is ready when the turn has tools, and that no server other than `gilb` lists tools. While the turn runs, a command, file, web, image or dynamic tool item in any thread of that process stops the turn, and so does an MCP tool call whose server is not `gilb`. A server other than `gilb` that starts, in any thread, stops the turn. The answer, the token use and `turn/completed` are taken only from the turn's own thread. The final `message` has `payer: "person-codex"` and `engine: "codex"`. Cached input tokens are not counted twice.
+
+Sub-agents cannot be switched off in Codex 0.167.2. They inherit this lock-down, and the item guard holds them. `collabAgentToolCall` and `subAgentActivity` do not by themselves stop the turn.
+
+Refused for now, before any child starts: a code turn (`400`, code `EngineNoCodeTurns`), pictures, and `delegateCoding: true`.
+
+The real `codex` is checked by hand with `scripts/codex-probe.mjs`. The tests run against `fake-codex.mjs`, a stand-in copied from that measurement.
+
+Still unproved: sub-agents cannot be switched off in Codex 0.167.2; they inherit the lock-down and are held by the item guard; Windows and Linux. A resumed chat thread was checked against the real Codex on this Mac on 2026-11-25: the second turn kept the thread id Codex returned.
+
 ## Changes
 
 - 0.1.1: types tightened; no behaviour change (the built `bridge.mjs` is byte-identical to 0.1.0).
@@ -373,6 +389,7 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 - 0.3.21: `POST /v1/projects/create` runs `git init` in the new project (no template, so no hooks) before any turn, so the selective-commit step can run and the deny on `.git` hooks, config and info/attributes covers it.
 - 0.3.22: the Open button: `POST /v1/preview` serves a read-only copy of a project's built app (see "Preview (Open button)"); a code turn the bridge refused because Claude Code did not start in the code folder is no longer retried, its log line names the init, the reported folder and the expected one, and later code turns say why code mode is off.
 - 0.3.23: a code turn that moves into a subfolder, or fails one folder check, no longer makes the bridge forget the code folder: that turn is stopped, the folder stays saved, and code mode comes back at the next use once the folder passes its check again; a paired `GET /v1/hello` says why while it is off (`codeModeOff`), and the "a code turn is running" answers name the running folder (`runningProjectFolder`).
+- 0.4.0: a chat turn may name `engine: "codex"` and run on the person's Codex (ChatGPT sign-in) with only this chat's tools; a paired `GET /v1/hello` lists `engines` (see "Engines (0.4.0)").
 
 ## Preview (Open button)
 
