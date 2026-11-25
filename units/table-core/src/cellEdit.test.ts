@@ -52,11 +52,11 @@ const declarations: FieldDeclarations = {
     term("AltText", "a:altText", "stock note", "inline-literal:text", "single"),
     term("BerthCount", "a:berthCount", "stock count", "inline-literal:integer", "single"),
     term("AskingPrice", "a:askingPrice", "unit price", "inline-literal:decimal", "single"),
-    term("MenuStartDate", "a:menuStartDate", "restock date", "inline-literal:date", "single"),
-    term("FedAt", "a:fedAt", "counted at", "inline-literal:dateTime", "single"),
+    term("DripStartDate", "a:dripStartDate", "restock date", "inline-literal:date", "single"),
+    term("GrantedAt", "a:grantedAt", "counted at", "inline-literal:dateTime", "single"),
     term("MadeForKids", "a:madeForKids", "made for kids", "inline-literal:boolean", "single"),
     term("ClothingSize", "a:clothingSize", "clothing size", "inline-literal:token", "single", { "a:valueSet": ["XS", "S", "M", "L"], "a:valueSetClosure": "closed" }),
-    term("ExerciseKind", "a:exerciseKind", "exerciseKind", "inline-literal:text", "single", { "a:valueSet": ["Red", "Green"] }),
+    term("HelpPictureKind", "a:helpPictureKind", "helpPictureKind", "inline-literal:text", "single", { "a:valueSet": ["Red", "Green"] }),
     term("ImpactBasis", "a:impactBasis", "impactBasis", "inline-literal:token", "single", { "a:valueSet": ["calm"], "a:valueSetClosure": "open" }),
     term("Account", "a:account", "Online Account", "inline-literal:text", "multi"),
     term("ApprovedPostPicture", "a:approvedPostPicture", "approved post picture", "reference", "single"),
@@ -106,13 +106,13 @@ describe("cellEdit", () => {
       expect(planOf("a:altText")).toEqual({ editable: true, editor: "text", integer: false, options: null, required: true, writeKey: "a:altText", label: "stock note" });
       expect(planOf("a:berthCount")).toMatchObject({ editor: "number", integer: true, required: false });
       expect(planOf("a:askingPrice")).toMatchObject({ editor: "number", integer: false });
-      expect(planOf("a:menuStartDate")).toMatchObject({ editor: "date" });
+      expect(planOf("a:dripStartDate")).toMatchObject({ editor: "date" });
       expect(planOf("a:madeForKids")).toMatchObject({ editor: "checkbox" });
       expect(planOf("a:clothingSize")).toMatchObject({ editor: "choice", options: ["XS", "S", "M", "L"] });
     });
 
     test("a list of values with no closure word is closed; one declared open is free text", () => {
-      expect(planOf("a:exerciseKind")).toMatchObject({ editor: "choice", options: ["Red", "Green"] });
+      expect(planOf("a:helpPictureKind")).toMatchObject({ editor: "choice", options: ["Red", "Green"] });
       expect(planOf("a:impactBasis")).toMatchObject({ editor: "text", options: null });
     });
 
@@ -126,7 +126,7 @@ describe("cellEdit", () => {
       expect(reasonOf("a:approvedPostPicture", { approvedPostPicture: { "@id": `${VAULT}/base/e/pic01` } })).toBe("Links are changed on the card for now");
       expect(reasonOf("a:approvedPostPicture")).toBe("Links are changed on the card for now");
       expect(reasonOf("a:account", { account: ["x"] })).toBe(READ_ONLY_REASON.multi);
-      expect(reasonOf("a:fedAt", { fedAt: "2026-11-25T08:00:00Z" })).toBe(READ_ONLY_REASON.dateTime);
+      expect(reasonOf("a:grantedAt", { grantedAt: "2026-11-25T08:00:00Z" })).toBe(READ_ONLY_REASON.dateTime);
       expect(reasonOf("a:postVisibility")).toBe(READ_ONLY_REASON.otherKind);
       expect(reasonOf("a:name")).toBe(READ_ONLY_REASON.noWriteKey);
     });
@@ -263,7 +263,7 @@ describe("cellEdit", () => {
           expect(offsetHours, zone).toBe(zone === "Etc/GMT+12" ? -12 : zone === "UTC" ? 0 : 14);
           for (const picked of ["2026-12-31", "2027-01-01", "2024-02-29"]) {
             expect(parseDateInput(picked), `${picked} in ${zone}`).toEqual({ ok: true, value: picked });
-            expect(cellPatch("a:menuStartDate", picked)).toEqual({ "a:menuStartDate": picked });
+            expect(cellPatch("a:dripStartDate", picked)).toEqual({ "a:dripStartDate": picked });
           }
         }
       } finally {
@@ -299,7 +299,7 @@ describe("cellEdit", () => {
   // Spec: step 2 brief 9, Text: "store exactly what was typed. No trimming, so leading and trailing spaces and unicode come back the
   // same", and its test list: 10 000 characters, leading and trailing spaces, emoji, RTL, combining marks, NUL-free control characters.
   describe("text", () => {
-    const plan = planOf("a:exerciseKind") && planOf("a:email");
+    const plan = planOf("a:helpPictureKind") && planOf("a:email");
     const odd = [
       "x".repeat(10_000),
       "  leading and trailing  ",
@@ -364,7 +364,7 @@ describe("cellEdit", () => {
     test("a value of the list is taken exactly; one that is not is refused with the list's own sentence", () => {
       expect(checkChoice("Green", ["Red", "Green"])).toEqual({ ok: true, value: "Green" });
       expect(checkChoice("Purple", ["Red", "Green"])).toEqual({ ok: false, why: "Purple is not in this list" });
-      expect(parseEdit(planOf("a:exerciseKind"), "Purple", "en-US")).toEqual({ ok: false, why: "Purple is not in this list" });
+      expect(parseEdit(planOf("a:helpPictureKind"), "Purple", "en-US")).toEqual({ ok: false, why: "Purple is not in this list" });
       // The list is matched exactly: another case, or a space, is another value.
       expect(checkChoice("green", ["Red", "Green"]).ok).toBe(false);
       expect(checkChoice("Green ", ["Red", "Green"]).ok).toBe(false);
@@ -376,7 +376,7 @@ describe("cellEdit", () => {
     test("a number field parses by its range, a date field by the calendar, a yes-or-no field takes true and false", () => {
       expect(parseEdit(planOf("a:berthCount"), "1.5", "en-US")).toEqual({ ok: false, why: '"1.5" is not a whole number' });
       expect(parseEdit(planOf("a:askingPrice"), "1,5", "de-DE")).toEqual({ ok: true, value: 1.5 });
-      expect(parseEdit(planOf("a:menuStartDate"), "2026-12-31", "en-US")).toEqual({ ok: true, value: "2026-12-31" });
+      expect(parseEdit(planOf("a:dripStartDate"), "2026-12-31", "en-US")).toEqual({ ok: true, value: "2026-12-31" });
       expect(parseEdit(planOf("a:madeForKids"), "true", "en-US")).toEqual({ ok: true, value: true });
       expect(parseEdit(planOf("a:madeForKids"), "false", "en-US")).toEqual({ ok: true, value: false });
       expect(parseEdit(planOf("a:madeForKids"), "", "en-US")).toEqual({ ok: true, value: null });
@@ -417,7 +417,7 @@ describe("cellEdit", () => {
   // Spec: step 2 brief 5 and 6: Failure and Refusals; Rule_Code_gilb-app-failure-truth RuleBasefailCorsIsNotAStatus ("a refused
   // cross-origin call has no status code ... detect the failed fetch itself").
   describe("problemOf", () => {
-    const cell = { label: "exerciseKind", typed: "Purple" as const };
+    const cell = { label: "helpPictureKind", typed: "Purple" as const };
     test("no answer at all (offline, or a cross-origin call the browser refused) is the failed state with Retry", () => {
       expect(problemOf({ kind: "network", message: "Failed to fetch" }, cell)).toEqual({ state: "failed", message: "Not saved: no connection. Retry", retry: true, keepsTyped: true });
     });
@@ -428,7 +428,7 @@ describe("cellEdit", () => {
     });
 
     test("422 ValueNotAllowedError is the closed-list state; 422 RequiredSlotMissingError leaves the cell uncleared and names the field", () => {
-      expect(problemOf({ kind: "http", status: 422, error: "ValueNotAllowedError", message: "a:exerciseKind takes Red or Green" }, cell)).toEqual({ state: "not-in-list", message: "Purple is not in this list", retry: false, keepsTyped: true });
+      expect(problemOf({ kind: "http", status: 422, error: "ValueNotAllowedError", message: "a:helpPictureKind takes Red or Green" }, cell)).toEqual({ state: "not-in-list", message: "Purple is not in this list", retry: false, keepsTyped: true });
       expect(problemOf({ kind: "http", status: 422, error: "RequiredSlotMissingError" }, { label: "stock note", typed: null })).toEqual({ state: "required", message: "stock note is required", retry: false, keepsTyped: false });
     });
 
@@ -439,7 +439,7 @@ describe("cellEdit", () => {
     });
 
     test("409 UndefinedTermError, and any other refusal, shows the vault's own words and keeps what was typed", () => {
-      expect(problemOf({ kind: "http", status: 409, error: "UndefinedTermError", message: "a:exerciseKind is not a defined term" }, cell)).toEqual({ state: "refused", message: "Not saved: a:exerciseKind is not a defined term", retry: false, keepsTyped: true });
+      expect(problemOf({ kind: "http", status: 409, error: "UndefinedTermError", message: "a:helpPictureKind is not a defined term" }, cell)).toEqual({ state: "refused", message: "Not saved: a:helpPictureKind is not a defined term", retry: false, keepsTyped: true });
       expect(problemOf({ kind: "http", status: 400, error: "InvalidDatomError" }, cell).message).toBe("Not saved: the vault answered 400 InvalidDatomError");
     });
 

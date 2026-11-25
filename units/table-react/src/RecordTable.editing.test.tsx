@@ -37,9 +37,9 @@ const declarations: FieldDeclarations = {
   fieldTerms: [
     term("AltText", "a:altText", "stock note", "inline-literal:text", "single"),
     term("BerthCount", "a:berthCount", "stock count", "inline-literal:integer", "single"),
-    term("MenuStartDate", "a:menuStartDate", "restock date", "inline-literal:date", "single"),
+    term("DripStartDate", "a:dripStartDate", "restock date", "inline-literal:date", "single"),
     term("MadeForKids", "a:madeForKids", "made for kids", "inline-literal:boolean", "single"),
-    term("ExerciseKind", "a:exerciseKind", "exerciseKind", "inline-literal:token", "single", { "a:valueSet": ["Red", "Green"], "a:valueSetClosure": "closed" }),
+    term("HelpPictureKind", "a:helpPictureKind", "helpPictureKind", "inline-literal:token", "single", { "a:valueSet": ["Red", "Green"], "a:valueSetClosure": "closed" }),
     term("ApprovedPostPicture", "a:approvedPostPicture", "approved post picture", "reference", "single"),
     term("BrandName", "a:brandName", "item code", "inline-literal:text", "single"),
   ],
@@ -47,7 +47,7 @@ const declarations: FieldDeclarations = {
   complete: true,
   incompleteAt: [],
 };
-// Columns, in label order: Name, approved post picture, exerciseKind, item code, made for kids, restock date, stock count, stock note.
+// Columns, in label order: Name, approved post picture, helpPictureKind, item code, made for kids, restock date, stock count, stock note.
 const fields = fieldsOfType(declarations, "GarmentStockLine");
 const record = (id: string, name: string, served: Record<string, unknown>): BaseRecord => ({
   id,
@@ -59,7 +59,7 @@ const record = (id: string, name: string, served: Record<string, unknown>): Base
   served: { facts: { label: name, ...served }, context: null, etag: null },
 });
 const START = [
-  record("r1", "Parka", { altText: "warm", berthCount: 3, madeForKids: true, exerciseKind: "Red", brandName: "P-1", approvedPostPicture: { "@id": `${VAULT}/base/e/pic01` } }),
+  record("r1", "Parka", { altText: "warm", berthCount: 3, madeForKids: true, helpPictureKind: "Red", brandName: "P-1", approvedPostPicture: { "@id": `${VAULT}/base/e/pic01` } }),
   record("r2", "Knit", { altText: "soft", brandName: "K-2" }),
   record("r3", "Boots", { brandName: "B-3" }),
 ];
@@ -390,7 +390,7 @@ describe("table-react: editing a cell", () => {
 
     test("a date is picked in a date box and written as the text that was picked", async () => {
       render(<Host />);
-      go("r1", "menuStartDate");
+      go("r1", "dripStartDate");
       key("r1", "Enter");
       expect(editor().getAttribute("type")).toBe("date");
       type("2026-12-31");
@@ -425,7 +425,7 @@ describe("table-react: editing a cell", () => {
     // Spec: step 2 brief 7 and its end-to-end case: "The refused 'Purple' in Red/Green."
     test("a choice opens its list; Purple in Red/Green turns the box red, is not written, and the list stays open with the reason", async () => {
       render(<Host />);
-      go("r1", "exerciseKind");
+      go("r1", "helpPictureKind");
       key("r1", "Enter");
       const list = () => [...screen.getByTestId("record-table-choice-list").querySelectorAll('[role="option"]')].map((o) => o.textContent);
       expect(list()).toEqual(["Red", "Green"]);
@@ -438,13 +438,13 @@ describe("table-react: editing a cell", () => {
       expect(asked).toEqual([]);
       // A value of the list is taken: by a click on it.
       fireEvent.click(screen.getByRole("option", { name: "Green" }));
-      await waitFor(() => expect(asked[0]).toMatchObject({ columnId: "a:exerciseKind", value: "Green", base: "Red" }));
+      await waitFor(() => expect(asked[0]).toMatchObject({ columnId: "a:helpPictureKind", value: "Green", base: "Red" }));
       expect(hasEditor()).toBe(false);
     });
 
     test("in a choice the arrows mark a value and Enter takes it; typing narrows the list", async () => {
       render(<Host />);
-      go("r2", "exerciseKind");
+      go("r2", "helpPictureKind");
       key("r2", "Enter");
       type("gr");
       expect([...screen.getByTestId("record-table-choice-list").querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual(["Green"]);
@@ -706,7 +706,7 @@ describe("table-react: editing a cell", () => {
 
     test("a tap on a value selects its cell and does not open the record; a second tap opens its box", async () => {
       render(<Host narrow />);
-      // A row of the list shows the first three columns it holds a value under: for r1 the picture, the exerciseKind and the item code.
+      // A row of the list shows the first three columns it holds a value under: for r1 the picture, the helpPictureKind and the item code.
       const cell = line("r1", "brandName");
       fireEvent.click(cell);
       expect(opened).toEqual([]);
@@ -785,7 +785,7 @@ describe("table-react: editing a cell", () => {
       await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("conflict"));
       go("r1", "altText");
       expect(await violations()).toEqual([]);
-      go("r1", "exerciseKind");
+      go("r1", "helpPictureKind");
       key("r1", "Enter");
       type("Purple");
       fireEvent.keyDown(editor(), { key: "Enter" });
