@@ -24,6 +24,8 @@
 //   the person reloads is a listener that was not there.
 // - Nothing sets state after the screen is gone; `onSaved` is still called, because the parent most needs the landed value then.
 // - There is no local draft store. The vault is the data of record: the write comes sooner, a draft is never kept on the device.
+// - `saveOn: "commit"` (0.2.0) turns the delay off: the change is written when the caller says the edit is finished (`flush()`), and still
+//   when the page is hidden or left. It is for a table cell, where Enter, Tab or leaving the cell finishes an edit and Esc takes it back.
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { sameValue } from "./sameValue";
@@ -46,6 +48,14 @@ export interface UseAutosaveRecordOptions<F extends FieldValues> {
   check?: (name: keyof F & string, value: F[keyof F], all: F) => string | null;
   /** Quiet-typing delay. Default AUTOSAVE_DELAY_MS. */
   delayMs?: number;
+  /**
+   * When a change is written. `typing` (the default): after the quiet-typing delay, at blur, and when the page is hidden or left.
+   * `commit`: only when the caller says the edit is finished (`flush()`: Enter, Tab or leaving a table cell), and when the page is
+   * hidden or left; never by the delay. For a surface where an edit can still be taken back before it is finished (a cell of a table:
+   * Esc restores the stored value), so nothing half-typed reaches the vault. Everything else is the same machine: one write at a time,
+   * the same fields never sent twice, a refused write keeps the edits and can be tried again.
+   */
+  saveOn?: "typing" | "commit";
   /** View-only vault: set() does nothing and nothing is written. */
   readOnly?: boolean;
   /** Called with the fields each time a write LANDS: the fields it was still the latest write for (none left: no call). Never on a failed or scheduled write. */
@@ -180,6 +190,8 @@ export function useAutosaveRecord<F extends FieldValues>(options: UseAutosaveRec
 
   const schedule = () => {
     clearTimer();
+    // `saveOn: "commit"`: the delay never writes. The caller's `flush()` does, and so do the page being hidden and the screen being left.
+    if (optionsRef.current.saveOn === "commit") return;
     timer.current = setTimeout(() => {
       timer.current = null;
       void writeNowRef.current(false);

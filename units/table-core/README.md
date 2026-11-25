@@ -21,6 +21,19 @@ Plain functions and types, no React, no network. A table is one type read in one
 - `cellText(cell)`: a cell as plain text.
 - `narrowColumns(columns, max?)`: the first `max` (default 3) columns after Name.
 - `narrowFieldsOfRow(columns, cells, max?)` (since 0.1.1): what a narrow screen lists under ONE row's name: the first `max` (default 3) columns, in column order, that hold a value in that row, each with the row's cell. A row that holds nothing lists nothing. `cellHoldsValue(cell)` is its test: any cell but an empty one and blank text (a stored `false` or `0` is a value).
+
+### Editing one cell (since 0.2.0, `src/cellEdit.ts`)
+
+Pure rules for editing the value of one existing cell. Nothing here writes or draws; a host hands the patch to its own write path.
+
+- `editabilityOf(column, cell, { systemKeys? })`: an `EditPlan` (`editor`: `text`, `number`, `date`, `checkbox` or `choice`; `integer`; `options`; `required`; `writeKey`; `label`) or `{ editable: false, reason }`. In scope: one plain value of a text, number, date, yes-or-no or closed-list field. Read-only, each with its sentence (`READ_ONLY_REASON`): the Name column, a link ("Links are changed on the card for now"), a field with several values, a date with a time, any other kind, a value no field describes, a field with no single write key, a field the host names as set by the vault, an unread value. A field whose term states no cardinality is edited as one value while its cell holds one or none.
+- `parseEdit(plan, text, locale)`: typed text as the value to store, or why it is not written. Text is stored exactly as typed (no trimming); only empty text is "no value" (`null`). `parseNumberInput` reads the locale's own decimal and grouping marks from `Intl` (`1,234.5` in en, `1.234,5` in de), groups only in threes, refuses what can be read in two ways, stores `-0` as 0 and `1e3` as 1000, and checks whole numbers. `parseDateInput` keeps `YYYY-MM-DD` as text and checks the calendar by arithmetic, never through a `Date`. `checkChoice` checks a closed list ("<value> is not in this list"). A required field cannot be cleared ("<field> is required").
+- `valueText(value, locale)`, `formatNumber(value, locale)`: what a stored value reads as and what its editor starts with; that text parses back to the same value.
+- `storedValueOf(cell)`, `sameCellValue(a, b)`: the plain value of a cell (`null`: no fact; a stored `""` is a value), and equality of two.
+- `cellPatch(writeKey, value)`: the merge-patch of one edit: that one field. Clearing sends `null`; `""` is never sent.
+- `decideAfterStale({ base, typed, server })`: after a 412 and a re-read: `retry` (the field still holds what the edit started from), `saved` (it already holds what was typed) or `conflict` (show both and ask; never overwrite).
+- `problemOf(failure, { label, typed })`: what a failed write means for the cell (`failed` with Retry for no answer at all or a 5xx; `not-in-list`; `required`; `read-only` for 403; `gone` for 404; `refused` with the vault's own words), whether Retry helps and whether the typed value stays.
+- `keyAct(input)`, `nextGridState(state, act, size)`: what a key does while moving and while typing, and where the selection goes.
 - `NAME_COLUMN_ID`, and the types `Cell`, `ColumnSource`, `TableColumn`, `TableRow`, `TableModel`, `BuildTableInput`.
 
 A `Cell` is one of:
@@ -106,4 +119,4 @@ None.
 
 New code, written for the table view (GilbApp, Solution TableView.SameRecords, delivery step 1). It uses `readList` of `vocabulary-source`, `entityRefFromFact` of `entity-ref`, and the types of `base-record` and `type-fields`.
 
-Tests (`src/tableCore.test.ts`, 32): an empty fact gives an empty cell; a multi value is a list; a link is a reference; rows equal the records; a type with no records gives headers and no rows; a fact outside the type's own fields is a column only while a record holds a value, after the type's own. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units.
+Tests: `src/cellEdit.test.ts` (47: editability by kind and each read-only reason; number parse in en, de, fr and nb; dates at UTC−12 and UTC+14; text of 10 000 characters, spaces, emoji, right-to-left, combining marks and control characters; empty against absent; the closed list; the 412 decision table; each failure as a cell state; the keys). `src/tableCore.test.ts` (36): an empty fact gives an empty cell; a multi value is a list; a link is a reference; rows equal the records; a type with no records gives headers and no rows; a fact outside the type's own fields is a column only while a record holds a value, after the type's own. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units.

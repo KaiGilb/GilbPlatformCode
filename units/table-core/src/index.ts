@@ -1,5 +1,6 @@
 /**
- * The unit's public names: the table builder (`buildTable`), its cell readers and its types.
+ * The unit's public names: the table builder (`buildTable`), its cell readers and its types; and, for editing one cell, what may be
+ * edited and how, typed text as a value, the one-field patch, the decision after a stale write, a failed write's meaning and the keys.
  */
 export {
   NAME_COLUMN_ID,
@@ -19,3 +20,36 @@ export {
   type TableModel,
   type TableRow,
 } from "./tableCore";
+export {
+  READ_ONLY_REASON,
+  cellPatch,
+  checkChoice,
+  decideAfterStale,
+  editabilityOf,
+  formatNumber,
+  keyAct,
+  nextGridState,
+  numberMarksOf,
+  parseDateInput,
+  parseEdit,
+  parseNumberInput,
+  problemOf,
+  sameCellValue,
+  storedValueOf,
+  valueText,
+  type CellProblem,
+  type CellValue,
+  type Editability,
+  type EditabilityOptions,
+  type EditPlan,
+  type EditorKind,
+  type GridMode,
+  type GridState,
+  type KeyAct,
+  type KeyInput,
+  type NumberMarks,
+  type Parsed,
+  type ReadOnlyCell,
+  type StaleDecision,
+  type WriteFailure,
+} from "./cellEdit";

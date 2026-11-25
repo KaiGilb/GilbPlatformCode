@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/record-autosave",
   "package": "@kaigilb/gilbplatformcode-record-autosave",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "Saves a record's fields as the person types: no Save, no Cancel, no Edit mode.",
   "source": {
     "repo": "KaiGilb/GilbPlatformCode",
@@ -22,6 +22,7 @@
     "src/useAutosaveRecord.tester.test.tsx",
     "src/useAutosaveRecord.tester2.test.tsx",
     "src/useAutosaveRecord.tester3.test.tsx",
+    "src/useAutosaveRecord.commit.test.tsx",
     "src/SaveStateLine.test.tsx",
     "src/sameValue.test.ts",
     "test/example.typecheck.tsx",

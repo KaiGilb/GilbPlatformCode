@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-table-core",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "A table over vault records with no screen: one type's fields and records in; columns, one row per record and one cell per fact out, with the footer line of a table cut at the row limit.",
