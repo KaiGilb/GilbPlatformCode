@@ -505,6 +505,22 @@ describe("table-react: editing a cell", () => {
       await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("saved"));
     });
 
+    // Tester round 4, R4-F: back online, a cell whose save got no answer is saved with no act of the person's.
+    test("no connection, then the browser's online event: the failed cell is tried again on its own and lands", async () => {
+      let fail = true;
+      answer = () => { if (fail) throw offline(); };
+      render(<Host />);
+      go("r1", "altText");
+      key("r1", "Enter");
+      type("typed offline");
+      fireEvent.keyDown(editor(), { key: "Enter" });
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("failed"));
+      fail = false;
+      await act(async () => { window.dispatchEvent(new Event("online")); });
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("saved"));
+      expect(asked.map((a) => a.value)).toEqual(["typed offline", "typed offline"]);
+    });
+
     test("Escape on a failed cell restores the stored value and says 'Change dropped'; nothing more is sent", async () => {
       answer = () => { throw offline(); };
       render(<Host />);

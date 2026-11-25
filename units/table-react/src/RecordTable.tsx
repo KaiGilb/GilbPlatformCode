@@ -588,6 +588,15 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
       return { readable: value !== undefined, value: value ?? null };
     },
   });
+  // Back online, every cell whose save got no answer is tried again with no act of the person's, as the card does (tester round 4,
+  // R4-F: with the save no longer paused out of sight while offline, the cell says "no connection"; coming back must still save it).
+  const retryAllRef = useRef(saves.retryAll);
+  retryAllRef.current = saves.retryAll;
+  useEffect(() => {
+    const onOnline = () => retryAllRef.current();
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, []);
   const dropDraft = (key: string) => setDrafts((prev) => {
     if (!prev.has(key)) return prev;
     const next = new Map(prev);
