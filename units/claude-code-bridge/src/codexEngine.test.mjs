@@ -1364,6 +1364,11 @@ const H1_CANARY_NAMES = [
   "OPENAI_BASE_URL", "OPENAI_ORGANIZATION", "OPENAI_API_KEY", "CODEX_API_KEY", "codex_api_key", "AZURE_OPENAI_API_KEY", "openai_api_key",
 ];
 const H1_KEEP = ["PATH", "HOME", "CODEX_HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SHELL", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy"];
+// On Windows the code also keeps these names (CODEX_ENV_KEEP_WIN32), and Windows names are not case-sensitive.
+const H1_KEEP_WIN32 = ["SystemRoot", "windir", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "PATHEXT", "ComSpec", "HOMEDRIVE", "HOMEPATH"];
+// The Windows CI log of PR 315 (windows 20 and 22, 2026-11-26) shows four more names in the stand-in's environment. The keep list
+// has none of them, so Windows itself supplies them. UNPROVEN until the next Windows run, because this Mac cannot run it.
+const H1_WIN_SUPPLIED = ["LOGONSERVER", "SYSTEMDRIVE", "USERDOMAIN", "USERNAME"];
 
 function writeNotifyProgram(folder) {
   const marker = path.join(folder, "notify-marker.txt");
@@ -1389,7 +1394,8 @@ describe("HK1-01 keep list and notify off", () => {
       for (const n of H1_CANARY_NAMES) expect(b.envNames).not.toContain(n); // 2: all 27 dropped
       expect(b.envNames).not.toContain("EXTRA_SECRET_THING");
       // macOS adds __CF_USER_TEXT_ENCODING to a child by itself when it is missing; the bridge does not pass it.
-      const outside = b.envNames.filter((n) => !H1_KEEP.includes(n) && !n.startsWith("FAKE_CODEX_") && n !== "__CF_USER_TEXT_ENCODING");
+      const winNames = process.platform === "win32" ? [...H1_KEEP_WIN32, ...H1_WIN_SUPPLIED].map((w) => w.toUpperCase()) : [];
+      const outside = b.envNames.filter((n) => !H1_KEEP.includes(n) && !winNames.includes(n.toUpperCase()) && !n.startsWith("FAKE_CODEX_") && n !== "__CF_USER_TEXT_ENCODING");
       expect(outside).toEqual([]);
       expect(b.envNames).toContain("CODEX_HOME");
       expect(b.argv).toContain("notify=[]");
@@ -1450,7 +1456,8 @@ describe("HK1-04 ending a turn ends the whole process group", () => {
   /** Case (c) stays up by design of the known gap, so the test ends it by pid when it is done. */
   const endByPid = (pid) => { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } };
 
-  it("a normal end leaves no plain or background grandchild, 10 s later", async () => {
+  it("a normal end leaves no plain or background grandchild, 10 s later", async (ctx) => {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
     // Spec: H-4 HK1-04 — a plain and a background (nohup &) grandchild of Codex are gone 10 s after the turn ends normally.
     await startBridge({ opts: { killGraceMs: 400 } });
     const r = await turn(secret, { engine: "codex", prompt: "GRANDKIDS-OK" });
@@ -1471,7 +1478,8 @@ describe("HK1-04 ending a turn ends the whole process group", () => {
     }
   }, 30_000);
 
-  it("an idle stop leaves no plain or background grandchild, 10 s later", async () => {
+  it("an idle stop leaves no plain or background grandchild, 10 s later", async (ctx) => {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
     // Spec: H-4 HK1-04 — a stopped turn (the idle limit) ends the group too: the stand-in ignores nothing, its helpers outlive it unless the group is signalled.
     await startBridge({ opts: { codexIdleMs: 500, codexTurnMaxMs: 20000, killGraceMs: 400 } });
     const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS" }, 5000);
@@ -1489,7 +1497,8 @@ describe("HK1-04 ending a turn ends the whole process group", () => {
     }
   }, 30_000);
 
-  it("a child that ignores SIGTERM is ended with SIGKILL to the group, with its helpers", async () => {
+  it("a child that ignores SIGTERM is ended with SIGKILL to the group, with its helpers", async (ctx) => {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
     // Spec: H-4 HK1-04 — after the grace the group gets SIGKILL: the stand-in ignores SIGTERM and its helpers go with it.
     await startBridge({ env: { FAKE_CODEX_IGNORE_TERM: "1" }, opts: { codexIdleMs: 500, codexTurnMaxMs: 20000, killGraceMs: 400 } });
     const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS" }, 5000);
@@ -1506,7 +1515,8 @@ describe("HK1-04 ending a turn ends the whole process group", () => {
     }
   }, 30_000);
 
-  it("case (c): a grandchild in its own session survives the group signal (known gap, measured)", async () => {
+  it("case (c): a grandchild in its own session survives the group signal (known gap, measured)", async (ctx) => {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
     // Spec: H-4 HK1-04 — measures case (c). A grandchild that starts its own session leaves the process group, so the group signal cannot reach it. This test pins that fact; a wider fix is out of scope and goes to Kai-Zen.
     await startBridge({ opts: { codexIdleMs: 500, codexTurnMaxMs: 20000, killGraceMs: 400 } });
     const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS" }, 5000);
@@ -1522,7 +1532,8 @@ describe("HK1-04 ending a turn ends the whole process group", () => {
     }
   }, 30_000);
 
-  it("the README says the Codex child leads its own process group and names the setsid gap", () => {
+  it("the README says the Codex child leads its own process group and names the setsid gap", (ctx) => {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
     // Spec: H-4 HK1-04 — the README states the group stop and the known gap
     const text = fs.readFileSync(path.join(HERE, "../README.md"), "utf8");
     expect(text).toContain("own process group");
