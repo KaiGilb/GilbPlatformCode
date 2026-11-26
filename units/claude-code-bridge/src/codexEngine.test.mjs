@@ -1249,3 +1249,27 @@ describe("HK1-05 strict Codex version", () => {
     }
   });
 });
+
+// Spec: H-7 HK1-07 — an account notice in the middle of a turn that does not say ChatGPT ends the turn.
+describe("HK1-07 account change in a turn", () => {
+  it.each([
+    { id: "apikey", mode: "apikey" },
+    { id: "null authMode (signed out)", mode: "none" },
+    { id: "no authMode field", mode: "missing" },
+    { id: "another word", mode: "amazonBedrock" },
+  ])("a notice with $id stops the turn with the sign-in sentence", async (row) => {
+    // Spec: H-7 HK1-07 — a notice that does not say chatgpt stops the turn; the stand-in would have answered after it
+    await startBridge({ env: { FAKE_CODEX_ACCT_MODE: row.mode } });
+    const r = await turn(secret, { engine: "codex", prompt: "ACCTUPDATE" });
+    expect(r.error).toEqual({ message: GARBAGE });
+    expect(r.message).toBeUndefined();
+  });
+
+  it("a notice that still says chatgpt does not stop the turn", async () => {
+    // Spec: H-7 HK1-07 — authMode chatgpt keeps the turn running to its answer
+    await startBridge({ env: { FAKE_CODEX_ACCT_MODE: "chatgpt" } });
+    const r = await turn(secret, { engine: "codex", prompt: "ACCTUPDATE" });
+    expect(r.error).toBeUndefined();
+    expect(r.message.content).toBe("acct-kept-going");
+  });
+});

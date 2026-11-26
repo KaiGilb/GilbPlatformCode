@@ -2805,6 +2805,15 @@ function classifyCodexAccount(result) {
         return { kind: "apiKey", plan: null };
     return { kind: "other", plan: null };
 }
+/**
+ * True when an `account/updated` notice still says the account is ChatGPT.
+ * The hacker's stand-in sent `{ authMode: "apikey", planType: null }` (HK1-07). The word for a ChatGPT sign-in is the
+ * same `chatgpt` that `account/read` uses. A missing field, null, or any other word is not a ChatGPT account.
+ * @param params The notice's params.
+ */
+function codexAccountUpdateKeeps(params) {
+    return params.authMode === "chatgpt";
+}
 /** The sentence for an account that is not ChatGPT, or null when it is. */
 function codexAccountRefusal(kind) {
     if (kind === "chatgpt")
@@ -5975,7 +5984,11 @@ export function createBridge(opts = {}) {
             const failStopped = () => {
                 if (!stopReason)
                     return false;
-                if (stopReason.kind === "guard") {
+                if (stopReason.kind === "account") {
+                    log(`codex account notice stopped the turn (${stopReason.detail})`);
+                    finish({ error: CODEX_UNREADABLE_MSG, sessionId: threadId || mode.sessionId, model, apiKeyRefused: true });
+                }
+                else if (stopReason.kind === "guard") {
                     log(`codex item guard stopped the turn (${stopReason.detail})`);
                     finish({ error: CODEX_GUARD_MSG, sessionId: threadId || mode.sessionId, model, bridgeRefused: true });
                 }
@@ -6026,6 +6039,11 @@ export function createBridge(opts = {}) {
                     if (!stopReason && name === "gilb" && status === "failed")
                         stopReason = { kind: "foreign", detail: "gilb failed" };
                 }
+                // The account is read once, before the thread starts. A later notice that does not say ChatGPT ends the turn,
+                // because a sign-in changed in the middle (a logout, or an API key) must not keep running under the first check.
+                // Only the exact word codexAccountUpdateKeeps accepts passes; a missing or odd field is not "still ChatGPT".
+                if (method === "account/updated" && !stopReason && !codexAccountUpdateKeeps(params))
+                    stopReason = { kind: "account", detail: "account/updated" };
                 // One guard for every notification that carries an item, from the moment this turn's thread exists.
                 // A sub-agent's shell is still a shell. The type name is compared exactly as Codex writes it.
                 if (threadId !== "") {

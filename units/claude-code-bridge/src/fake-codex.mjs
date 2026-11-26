@@ -24,7 +24,7 @@
  * EARLYSHELL (a commandExecution item before the turn/start answer), COMPLETEDSHELL (that item only as
  * item/completed), UPDATEDSHELL (only as item/updated), NOANSWER (turn/completed with no agentMessage),
  * WIDE (the long answer), BIGLINE (the long line, then an answer the bridge must not show),
- * TOOLTHENFAIL (one tool call, then a failed turn).
+ * TOOLTHENFAIL (one tool call, then a failed turn), ACCTUPDATE (an account/updated notice with authMode FAKE_CODEX_ACCT_MODE, then an answer).
  */
 import fs from "node:fs";
 import readline from "node:readline";
@@ -244,6 +244,18 @@ async function runScenario(prompt, threadId, turnId) {
   }
   if (prompt.includes("UPDATEDSHELL")) {
     note("item/updated", { threadId, turnId, item: { type: "commandExecution" } });
+    return;
+  }
+  if (prompt.includes("ACCTUPDATE")) {
+    // Guess: the notice shape is the hacker's stand-in (authMode and planType). FAKE_CODEX_ACCT_MODE is the authMode sent; "none" sends null, "missing" sends no authMode.
+    const mode = process.env.FAKE_CODEX_ACCT_MODE ?? "apikey";
+    const params = { planType: null };
+    if (mode === "none") params.authMode = null;
+    else if (mode !== "missing") params.authMode = mode;
+    note("account/updated", params);
+    // A pause, so a bridge that ignores the notice still answers and the test sees it.
+    await new Promise((r) => setTimeout(r, 300));
+    finishTurn(threadId, turnId, "acct-kept-going", "final_answer");
     return;
   }
   if (prompt.includes("CASESHELL")) {
