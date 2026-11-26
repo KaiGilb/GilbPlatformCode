@@ -355,7 +355,7 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env) {
  * A name is removed when it is billing-denied (`envDenied`), an OpenAI key name
  * (`OPENAI_*`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `AZURE_OPENAI_API_KEY`), or secret-like.
  * A name is secret-like when it contains TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL or API_KEY, or ends in `_KEY`.
- * Every other name stays, except `__proto__`: assigning that name sets the prototype, so it is not an own property of the result.
+ * Every other name stays, except `__proto__`. Assignment drops a string value and leaves the prototype as Object.prototype. Assignment of an object sets the result's prototype, so the name is not an own property, and it leaves Object.prototype unchanged.
  * Names are compared without regard to case, because Windows env names are.
  * @param env The bridge's environment.
  * @returns The environment for `codex app-server`.
