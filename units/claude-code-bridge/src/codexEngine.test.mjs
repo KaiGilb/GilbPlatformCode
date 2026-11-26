@@ -557,6 +557,7 @@ describe("a Codex chat turn", () => {
 
   it("cancelling a turn that waits ends the child and says the turn was cancelled", async () => {
     // Proves: POST /v1/turn/cancel stops the Codex child and the stream says the turn was cancelled.
+    // Spec: Chat.CodexConnect B-W1 — a Windows stop asks taskkill for this child's pid, and an undefined pid fails the test (meter: the execFile seam records /PID)
     await startBridge();
     const live = await openTurn(secret, { engine: "codex", prompt: "WAITFOREVER" });
     await until(() => live.turnId && rpcs("turn/start").length === 1);
@@ -565,10 +566,61 @@ describe("a Codex chat turn", () => {
     expect(live.events.find((e) => e[0] === "error")[1]).toEqual({ message: "The turn was cancelled." });
     const pid = rpcs("turn/start").at(-1)?.pid;
     if (process.platform === "win32") {
-      // Windows ends this child with taskkill /F. The stand-in never receives SIGTERM, so it cannot write that row. The child must still be gone.
-      await until(() => pid && !alive(pid));
-    } else {
-      await until(() => rows().some((r) => r.event === "sigterm"));
+      // A real Windows machine. This Mac does not run this branch. Part 5 owns that machine.
+      expect(typeof pid).toBe("number");
+      await until(() => !alive(pid));
+      return;
+    }
+    await until(() => rows().some((r) => r.event === "sigterm"));
+    // This Mac forces the Windows stop. The lookup rewrites the stand-in's path, and Node cannot import that path.
+    // The lookup is answered with the real stand-in. A starter runs it, so the stop still has this child's pid.
+    // taskkill is the seam. It is not a real Windows program.
+    const firstDir = dir;
+    await bridge.close();
+    bridge = undefined;
+    await removeTestDir(firstDir);
+    const kills = [];
+    const execFile = (file, args, _opts, cb) => {
+      kills.push({ file, args: [...args] });
+      const asked = Number(args?.[1]);
+      if (Number.isInteger(asked)) {
+        try { process.kill(asked, "SIGKILL"); } catch { /* already gone */ }
+      }
+      if (typeof cb === "function") cb(null);
+    };
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-win-cancel-"));
+    const starter = path.join(scratch, "starter.sh");
+    fs.writeFileSync(starter, `#!/bin/sh\nshift\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(FAKE_CODEX)} "$@"\n`, { mode: 0o755 });
+    fs.chmodSync(starter, 0o755);
+    const winPath = path.win32.resolve(FAKE_CODEX);
+    const origStat = fs.statSync;
+    const origAccess = fs.accessSync;
+    fs.statSync = function (p, ...args) {
+      return origStat.call(fs, p === winPath ? FAKE_CODEX : p, ...args);
+    };
+    fs.accessSync = function (p, ...args) {
+      return origAccess.call(fs, p === winPath ? FAKE_CODEX : p, ...args);
+    };
+    try {
+      await startBridge({ opts: { platformOpts: { platform: "win32", execFile, nodePath: starter } } });
+      const liveWin = await openTurn(secret, { engine: "codex", prompt: "WAITFOREVER" });
+      await until(() => liveWin.turnId && rpcs("turn/start").length === 1);
+      expect((await api(secret, "/v1/turn/cancel", { turnId: liveWin.turnId })).json).toEqual({ cancelled: true });
+      const winPid = rpcs("turn/start").at(-1)?.pid;
+      // An undefined pid is a failed stop: taskkill was not asked for this child.
+      expect(typeof winPid).toBe("number");
+      const askedForThisPid = () => kills.some((k) => String(k.file).endsWith(`${path.win32.sep}taskkill.exe`) && k.args[0] === "/PID" && k.args[1] === String(winPid) && k.args.includes("/T") && k.args.includes("/F"));
+      try {
+        await until(askedForThisPid);
+      } catch (err) {
+        throw new Error(`no taskkill /PID ${String(winPid)}; seam saw ${JSON.stringify(kills)} (${err instanceof Error ? err.message : String(err)})`);
+      }
+      await until(() => liveWin.events.some((e) => e[0] === "error"));
+      expect(liveWin.events.find((e) => e[0] === "error")[1]).toEqual({ message: "The turn was cancelled." });
+    } finally {
+      fs.statSync = origStat;
+      fs.accessSync = origAccess;
+      fs.rmSync(scratch, { recursive: true, force: true });
     }
   });
 });
