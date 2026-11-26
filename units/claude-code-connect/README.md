@@ -33,7 +33,7 @@ It needs the `claude-code-client` unit (0.1.6 or newer, for `commands.windows`) 
 
 The Codex item, on every tab (`{T}` is Terminal, PowerShell or terminal, as on the Claude setup):
 
-- "**Codex**, signed in with your ChatGPT subscription. Install it once in {T}:"
+- "**Codex** signed in with your ChatGPT subscription. Install it once in {T}:"
 - a command `npm install -g @openai/codex` (`codex-install`, copy label "Copy install command")
 - "Then sign in:"
 - a command `codex login` (`codex-login`, copy label "Copy sign-in command")
