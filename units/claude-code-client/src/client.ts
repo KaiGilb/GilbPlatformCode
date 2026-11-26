@@ -900,8 +900,14 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
   const storageKey = `${ns}.claude-code-bridge.${principal}`;
   const sessionPrefix = `${ns}.claude-code-session.${principal}.`;
 
-  const notRunning = () => {
+  // A Codex turn names Codex. Every other call, including a Claude turn, keeps the bridge sentence byte for byte.
+  const notRunning = (engine?: "codex") => {
     const cmd = typeof config.startCommand === "function" ? config.startCommand() : config.startCommand;
+    if (engine === "codex") {
+      return cmd
+        ? `Codex cannot be reached: the bridge is not running on this computer. Start it in Terminal with: ${cmd}`
+        : "Codex cannot be reached: the bridge is not running on this computer.";
+    }
     return cmd
       ? `The Claude Code bridge is not reachable on this computer. Start it in Terminal with: ${cmd}`
       : "The Claude Code bridge is not reachable on this computer. Start it with the command shown under Connect > Claude Code.";
@@ -924,6 +930,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     onEnd(): void;
     onRes(status: number, contentType: string, body: string): void;
     fail(err: Error): void;
+    /** The sentence for a bridge that cannot be reached. A Codex turn names Codex; every other request keeps the bridge sentence. */
+    unreachable(): string;
   }
   let relayWindow: Window | null = null;
   let relayStateNow: RelayState = "closed";
@@ -999,12 +1007,12 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       const h = m.headers && typeof m.headers === "object" ? (m.headers as Record<string, unknown>) : {};
       r.onRes(Number(m.status), typeof h["content-type"] === "string" ? h["content-type"] : "", typeof m.body === "string" ? m.body : "");
     } else if (m.type === "gilb-bridge-err") {
-      r.fail(m.message === "aborted" ? new DOMException("aborted", "AbortError") : new ClaudeCodeBridgeError(0, notRunning()));
+      r.fail(m.message === "aborted" ? new DOMException("aborted", "AbortError") : new ClaudeCodeBridgeError(0, r.unreachable()));
     }
   }
 
   /** One request through the relay window. Resolves at the head with a Response whose body is fed by the window's messages. */
-  function relayRequest(path: string, init: RequestInit, headTimeoutMs: number = RELAY_HEAD_TIMEOUT_MS): Promise<Response> {
+  function relayRequest(path: string, init: RequestInit, headTimeoutMs: number = RELAY_HEAD_TIMEOUT_MS, engine?: "codex"): Promise<Response> {
     const signal = init.signal ?? undefined;
     if (signal?.aborted) return Promise.reject(new DOMException("aborted", "AbortError"));
     const headers: Record<string, string> = {};
@@ -1042,7 +1050,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       };
       const headTimer = setTimeout(() => {
         abortRemote();
-        fail(new ClaudeCodeBridgeError(0, notRunning()));
+        fail(new ClaudeCodeBridgeError(0, notRunning(engine)));
       }, headTimeoutMs);
       signal?.addEventListener("abort", onAbort, { once: true });
       const stream = new ReadableStream<Uint8Array>({
@@ -1065,7 +1073,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
             headSeen = true;
             if (nullBody) controller?.close();
           } catch {
-            fail(new ClaudeCodeBridgeError(0, notRunning()));
+            fail(new ClaudeCodeBridgeError(0, notRunning(engine)));
           }
         },
         onChunk(text) {
@@ -1096,6 +1104,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           }
         },
         fail,
+        unreachable: () => notRunning(engine),
       });
       postRelay({ type: "gilb-bridge-req", id, path, method: init.method ?? "GET", headers, ...(typeof init.body === "string" ? { body: init.body } : {}) });
     });
@@ -1105,18 +1114,18 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
    * THE one way to reach the bridge. The relay window open: the request goes through it, never also direct. Otherwise it is a
    * direct fetch. `keepalive` has no meaning through the relay (the window sends it), so it is dropped there.
    */
-  function bridgeRequest(path: string, init: RequestInit, headTimeoutMs?: number): Promise<Response> {
-    if (relayStateNow === "open" && relayWindow !== null) return relayRequest(path, init, headTimeoutMs);
+  function bridgeRequest(path: string, init: RequestInit, headTimeoutMs?: number, engine?: "codex"): Promise<Response> {
+    if (relayStateNow === "open" && relayWindow !== null) return relayRequest(path, init, headTimeoutMs, engine);
     return fetch(`${bridgeUrl}${path}`, init);
   }
 
-  async function bridgeFetch(path: string, init: RequestInit, headTimeoutMs?: number): Promise<Response> {
+  async function bridgeFetch(path: string, init: RequestInit, headTimeoutMs?: number, engine?: "codex"): Promise<Response> {
     try {
-      return await bridgeRequest(path, init, headTimeoutMs);
+      return await bridgeRequest(path, init, headTimeoutMs, engine);
     } catch (e) {
       if (init.signal?.aborted) throw new ClaudeCodeBridgeError(499, DISCONNECTED);
       if (e instanceof ClaudeCodeBridgeError) throw e;
-      throw new ClaudeCodeBridgeError(0, notRunning());
+      throw new ClaudeCodeBridgeError(0, notRunning(engine));
     }
   }
 
@@ -1205,12 +1214,14 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       onStatus?: (data: { apiKeySource: string | null; model: string; engine?: "codex"; account?: string }) => void,
       turnSignal: AbortSignal = signal,
     ): Promise<BridgeTurnOut> {
+      // The same words for the turn, its tool answers and its hand-off: a Codex turn stays a Codex turn.
+      const unreachable = engine === "codex" ? "codex" as const : undefined;
       const res = await bridgeFetch("/v1/turn", {
         signal: turnSignal,
         method: "POST",
         headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
         body: JSON.stringify(body),
-      });
+      }, undefined, unreachable);
       if (res.status === 401) throw bridgeForgotUs();
       if (!res.ok) {
         const err = (await res.json().catch(() => null)) as { error?: unknown; code?: unknown; project?: unknown; ownTurn?: unknown; turnId?: unknown; startedAt?: unknown } | null;
@@ -1277,7 +1288,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 method: "POST",
                 headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
                 body: JSON.stringify({ turnId: forTurn, id, result: answer.result, isError: answer.isError }),
-              });
+              }, undefined, unreachable);
               // The bridge did not take the answer (restarted, disconnected, or the turn is gone): it would wait for it
               // for 15 minutes. Stop here instead; leaving the stream (see readBridgeSse) ends the turn on the bridge.
               if (back.status === 401) throw bridgeForgotUs();
@@ -1333,7 +1344,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 method: "POST",
                 headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
                 body: JSON.stringify({ turnId, id: req.id, allow, ...(allow && scope ? { scope } : {}) }),
-              });
+              }, undefined, unreachable);
               if (back.status === 401) throw bridgeForgotUs();
               // 404 or 409: the question timed out or was answered already; nothing more to do.
             } catch (err) {
@@ -1353,7 +1364,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 method: "POST",
                 headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
                 body: JSON.stringify({ turnId, id, allow: false }),
-              });
+              }, undefined, unreachable);
               if (back.status === 401) throw bridgeForgotUs();
             } catch (err) {
               if (!stop.signal.aborted) failTurn(err);
