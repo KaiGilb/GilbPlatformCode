@@ -1497,6 +1497,23 @@ describe("HK1-04 ending a turn ends the whole process group", () => {
     }
   }, 30_000);
 
+  it("a child that exits on its own first still has its group stopped: no grandchild is left", async (ctx) => {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
+    // Spec: H-4 HK1-04 — the group is stopped also when the child exits first. The stand-in ends itself and leaves its plain and background helpers; only the close handler's stop() can end them.
+    await startBridge({ opts: { killGraceMs: 400 } });
+    const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS-EXIT" }, 5000);
+    expect(r.error?.message).toContain("Codex stopped without an answer");
+    const g = grandkids();
+    expect(g).toBeTruthy();
+    try {
+      await until(() => !alive(g.plain) && !alive(g.background), 5000);
+    } finally {
+      endByPid(g.session);
+      endByPid(g.plain);
+      endByPid(g.background);
+    }
+  }, 30_000);
+
   it("a child that ignores SIGTERM is ended with SIGKILL to the group, with its helpers", async (ctx) => {
     if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
     // Spec: H-4 HK1-04 — after the grace the group gets SIGKILL: the stand-in ignores SIGTERM and its helpers go with it.
