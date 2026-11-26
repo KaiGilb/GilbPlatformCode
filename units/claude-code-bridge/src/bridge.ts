@@ -2674,7 +2674,7 @@ export const CODEX_SUPPORTED_LINE = "0.167";
 export const CODEX_IDLE_MS = 35 * 60 * 1000;
 /** A Codex turn ends after this long even when lines keep arriving. The idle sentence is used: the ruling named one sentence for both stops. */
 export const CODEX_TURN_MAX_MS = 24 * 60 * 60 * 1000;
-/** After SIGTERM, a Codex child that has not exited is SIGKILL'd. A chat child is not a process-group leader, so this is that one pid. */
+/** After SIGTERM, a Codex child group that has not ended is SIGKILL'd (Mac and Linux: the child leads its own process group; Windows: taskkill /T /F). */
 export const CODEX_KILL_GRACE_MS = 3000;
 /** One stdout or stderr line longer than this (16 MiB) stops the child. A line of exactly this length is still read. */
 export const CODEX_LINE_MAX = 16 * 1024 * 1024;
@@ -3321,7 +3321,7 @@ export function resolveCodexLaunch(bin: string, env: NodeJS.ProcessEnv = process
   return { ok: true, command: real, prefix: [], shown: real };
 }
 
-/** Marks a Codex chat or probe child. Stopping it is a two-step kill of that one pid, not a process-group kill. */
+/** Marks a Codex chat or probe child. Off Windows it leads its own process group, so stopping it signals the whole group. */
 const CODEX_CHILD = Symbol("codexChild");
 const codexStopJobs = new WeakMap<ChildProcess, Promise<void>>();
 
@@ -3349,8 +3349,10 @@ function waitChildGone(child: ChildProcess, ms: number): Promise<boolean> {
 }
 
 /**
- * Stops one Codex child: SIGTERM, then SIGKILL after the grace when it is still there. On Windows, the existing tree kill.
- * A second call for the same child waits for the first. The chat child is not a process-group leader.
+ * Stops one Codex child. Off Windows the child leads its own process group: SIGTERM goes to the group, and SIGKILL after the grace when a member is
+ * still there. The group is signalled even when the child itself has already exited, because what it started in the background stays in the group.
+ * On Windows, the existing tree kill. A second call for the same child waits for the first.
+ * Known gap: a grandchild that starts its own session (setsid) leaves the group, and a group signal cannot reach it.
  * @param child The Codex child.
  * @param o Grace, platform, and the Windows taskkill runner. Grace defaults to {@link CODEX_KILL_GRACE_MS}.
  */
@@ -3366,8 +3368,13 @@ function stopCodexProcess(child: ChildProcess | null | undefined, o: { graceMs?:
     try {
       const platform = o.platform ?? process.platform;
       const grace = o.graceMs ?? CODEX_KILL_GRACE_MS;
+      const groupPid = (child as unknown as Record<symbol, number | undefined>)[GROUP_LEADER];
       if (platform === "win32") {
         await killChild(child, o.env ?? process.env, { platform: "win32", execFile: o.execFile });
+        await waitChildGone(child, 5000);
+      } else if (groupPid !== undefined) {
+        // A group that is already gone is not an error: killGroup returns at once.
+        await killGroup(groupPid, grace);
         await waitChildGone(child, 5000);
       } else if (!childGone(child)) {
         try { child.kill("SIGTERM"); } catch { /* already gone */ }
@@ -3393,8 +3400,11 @@ function startCodexProcess(launch: { command: string; prefix: string[] }, cwd: s
       env,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
+      // Its own process group (off Windows), so ending the turn reaches what Codex started.
+      ...(process.platform !== "win32" ? { detached: true } : {}),
     });
     (child as unknown as Record<symbol, true>)[CODEX_CHILD] = true;
+    if (process.platform !== "win32" && child.pid !== undefined) (child as unknown as Record<symbol, number>)[GROUP_LEADER] = child.pid;
     return { rpc: new CodexRpc(child) };
   } catch (e) {
     return { error: (e as ErrLike)?.message ?? String(e) };
@@ -5851,6 +5861,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       armIdle();
       rpc.child.on("close", () => {
         poke();
+        // Codex may have started something in the background: the turn is over, so its group is ended too.
+        stop();
         if (settled) return;
         const tail = stderrTail(rpc.stderr());
         if (!handshook && rpc.stderr().includes("Unknown feature flag")) {

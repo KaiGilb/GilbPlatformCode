@@ -24,10 +24,11 @@
  * EARLYSHELL (a commandExecution item before the turn/start answer), COMPLETEDSHELL (that item only as
  * item/completed), UPDATEDSHELL (only as item/updated), NOANSWER (turn/completed with no agentMessage),
  * WIDE (the long answer), BIGLINE (the long line, then an answer the bridge must not show),
+ * GRANDKIDS (starts three grandchildren: a plain one, one in the background through sh and nohup, and one in its own session; logs their pids; then waits, or with GRANDKIDS-OK answers),
  * TOOLTHENFAIL (one tool call, then a failed turn), ITEMS:<base64 JSON array of notifications> (written as given, then an answer), ACCTUPDATE (an account/updated notice with authMode FAKE_CODEX_ACCT_MODE, then an answer).
  */
 import fs from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import readline from "node:readline";
 import crypto from "node:crypto";
 
@@ -256,6 +257,18 @@ async function runScenario(prompt, threadId, turnId) {
       try { note("thread/status/changed", { threadId, status: "idle" }); } catch { /* the pipe is already closed */ }
     }, 40);
     timer.unref();
+    return;
+  }
+  if (prompt.includes("GRANDKIDS")) {
+    // Guess: Codex starts helper programs in its own process group, some in the background. Each helper ends itself after 90 s, so a test that fails leaves nothing for long.
+    const hold = ["-e", "setInterval(() => {}, 1000); setTimeout(() => process.exit(0), 90000);"];
+    const plain = spawn(process.execPath, hold, { stdio: "ignore" });
+    plain.unref();
+    const bg = spawnSync("sh", ["-c", 'nohup "$0" "$@" >/dev/null 2>&1 & echo $!', process.execPath, ...hold], { encoding: "utf8" });
+    const session = spawn(process.execPath, hold, { stdio: "ignore", detached: true });
+    session.unref();
+    log({ event: "grandkids", plain: plain.pid, background: Number(String(bg.stdout).trim()), session: session.pid });
+    if (prompt.includes("GRANDKIDS-OK")) finishTurn(threadId, turnId, "grandkids-done", "final_answer");
     return;
   }
   if (prompt.includes("WIDE")) {

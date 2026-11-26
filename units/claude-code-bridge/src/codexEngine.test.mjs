@@ -1443,3 +1443,89 @@ describe("HK1-01 keep list and notify off", () => {
     expect(text).not.toContain("a variable whose name contains TOKEN, SECRET");
   });
 });
+
+describe("HK1-04 ending a turn ends the whole process group", () => {
+  const WAIT_AFTER_END_MS = 10_000;
+  const grandkids = () => rows().find((row) => row.event === "grandkids");
+  /** Case (c) stays up by design of the known gap, so the test ends it by pid when it is done. */
+  const endByPid = (pid) => { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } };
+
+  it("a normal end leaves no plain or background grandchild, 10 s later", async () => {
+    // Spec: H-4 HK1-04 — a plain and a background (nohup &) grandchild of Codex are gone 10 s after the turn ends normally.
+    await startBridge({ opts: { killGraceMs: 400 } });
+    const r = await turn(secret, { engine: "codex", prompt: "GRANDKIDS-OK" });
+    expect(r.error).toBeUndefined();
+    expect(r.message).toBeTruthy();
+    const g = grandkids();
+    expect(g).toBeTruthy();
+    expect(g.plain).toBeGreaterThan(0);
+    expect(g.background).toBeGreaterThan(0);
+    await delay(WAIT_AFTER_END_MS);
+    try {
+      expect(alive(g.plain)).toBe(false);
+      expect(alive(g.background)).toBe(false);
+    } finally {
+      endByPid(g.session);
+      endByPid(g.plain);
+      endByPid(g.background);
+    }
+  }, 30_000);
+
+  it("an idle stop leaves no plain or background grandchild, 10 s later", async () => {
+    // Spec: H-4 HK1-04 — a stopped turn (the idle limit) ends the group too: the stand-in ignores nothing, its helpers outlive it unless the group is signalled.
+    await startBridge({ opts: { codexIdleMs: 500, codexTurnMaxMs: 20000, killGraceMs: 400 } });
+    const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS" }, 5000);
+    expect(r.error).toEqual({ message: IDLE });
+    const g = grandkids();
+    expect(g).toBeTruthy();
+    await delay(WAIT_AFTER_END_MS);
+    try {
+      expect(alive(g.plain)).toBe(false);
+      expect(alive(g.background)).toBe(false);
+    } finally {
+      endByPid(g.session);
+      endByPid(g.plain);
+      endByPid(g.background);
+    }
+  }, 30_000);
+
+  it("a child that ignores SIGTERM is ended with SIGKILL to the group, with its helpers", async () => {
+    // Spec: H-4 HK1-04 — after the grace the group gets SIGKILL: the stand-in ignores SIGTERM and its helpers go with it.
+    await startBridge({ env: { FAKE_CODEX_IGNORE_TERM: "1" }, opts: { codexIdleMs: 500, codexTurnMaxMs: 20000, killGraceMs: 400 } });
+    const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS" }, 5000);
+    expect(r.error).toEqual({ message: IDLE });
+    const g = grandkids();
+    const pid = rpcs("turn/start").at(-1)?.pid;
+    try {
+      await until(() => !alive(pid), 5000);
+      await until(() => !alive(g.plain) && !alive(g.background), 5000);
+    } finally {
+      endByPid(g.session);
+      endByPid(g.plain);
+      endByPid(g.background);
+    }
+  }, 30_000);
+
+  it("case (c): a grandchild in its own session survives the group signal (known gap, measured)", async () => {
+    // Spec: H-4 HK1-04 — measures case (c). A grandchild that starts its own session leaves the process group, so the group signal cannot reach it. This test pins that fact; a wider fix is out of scope and goes to Kai-Zen.
+    await startBridge({ opts: { codexIdleMs: 500, codexTurnMaxMs: 20000, killGraceMs: 400 } });
+    const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS" }, 5000);
+    expect(r.error).toEqual({ message: IDLE });
+    const g = grandkids();
+    await delay(WAIT_AFTER_END_MS);
+    try {
+      expect(alive(g.session)).toBe(true);
+    } finally {
+      endByPid(g.session);
+      endByPid(g.plain);
+      endByPid(g.background);
+    }
+  }, 30_000);
+
+  it("the README says the Codex child leads its own process group and names the setsid gap", () => {
+    // Spec: H-4 HK1-04 — the README states the group stop and the known gap
+    const text = fs.readFileSync(path.join(HERE, "../README.md"), "utf8");
+    expect(text).toContain("own process group");
+    expect(text).toContain("own session");
+  });
+});
