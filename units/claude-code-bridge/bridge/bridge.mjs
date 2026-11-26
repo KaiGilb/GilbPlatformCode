@@ -198,29 +198,41 @@ export function childEnv(env = process.env) {
     return out;
 }
 /**
- * The environment a Codex child gets: the bridge's environment, with some names removed.
+ * The only environment variable names the Codex child gets. A keep list, not a drop list (H-1, HK1-01): a drop list cannot know
+ * every name a person uses for a secret (the hacker's canary run: it missed 16 of 27), and a program from the person's Codex settings
+ * would receive whatever it missed. On Mac and Linux a name is matched exactly. SSH_AUTH_SOCK is not kept.
+ * The proxy names are kept in both cases, because tools read either.
+ */
+export const CODEX_ENV_KEEP = [
+    "PATH", "HOME", "CODEX_HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SHELL",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+];
+/** Added on Windows, where names are matched without regard to case. */
+export const CODEX_ENV_KEEP_WIN32 = [
+    "SystemRoot", "windir", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "PATHEXT", "ComSpec", "HOMEDRIVE", "HOMEPATH",
+];
+/**
+ * The environment a Codex child gets: only the names in {@link CODEX_ENV_KEEP} (and on Windows {@link CODEX_ENV_KEEP_WIN32}).
  * It is not {@link childEnv}: a Codex chat turn does not get the Claude tool-timeout variables that function adds.
- * A name is removed when it is billing-denied (`envDenied`), an OpenAI key name
- * (`OPENAI_*`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `AZURE_OPENAI_API_KEY`), or secret-like.
- * A name is secret-like when it contains TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL or API_KEY, or ends in `_KEY`.
- * Every other name stays, except `__proto__`. Assignment drops a string value and leaves the prototype as Object.prototype. Assignment of an object sets the result's prototype, so the name is not an own property, and it leaves Object.prototype unchanged.
- * Names are compared without regard to case, because Windows env names are.
+ * Everything else is dropped, so a secret under any name stays in the bridge's own process.
  * @param env The bridge's environment.
+ * @param platform The platform; on `win32` names are compared without regard to case.
+ * @param extraKeep More exact names to keep. Only code that embeds the bridge can pass them (the tests' stand-in controls).
+ * A billing name or an OpenAI key name is refused here too, so this cannot bring an API key back.
  * @returns The environment for `codex app-server`.
  */
-export function codexChildEnv(env = process.env) {
+export function codexChildEnv(env = process.env, platform = process.platform, extraKeep = []) {
+    const win = platform === "win32";
+    const fold = (n) => (win ? n.toUpperCase() : n);
+    const extra = extraKeep.filter((n) => {
+        const u = n.toUpperCase();
+        return !envDenied(n) && !u.startsWith("OPENAI_") && u !== "CODEX_API_KEY" && u !== "CODEX_ACCESS_TOKEN" && u !== "AZURE_OPENAI_API_KEY";
+    });
+    const keep = new Set([...CODEX_ENV_KEEP, ...(win ? CODEX_ENV_KEEP_WIN32 : []), ...extra].map(fold));
     const out = {};
     for (const [k, v] of Object.entries(env)) {
-        if (envDenied(k))
-            continue;
-        const u = k.toUpperCase();
-        // An API key in the environment would bill a turn to a key. The ChatGPT sign-in is the only billing this bridge allows.
-        if (u.startsWith("OPENAI_") || u === "CODEX_API_KEY" || u === "CODEX_ACCESS_TOKEN" || u === "AZURE_OPENAI_API_KEY")
-            continue;
-        // LC_API_KEY goes because this secret-like check removes it, whatever its prefix.
-        if (u.includes("TOKEN") || u.includes("SECRET") || u.includes("PASSWORD") || u.includes("PASSWD") || u.includes("CREDENTIAL") || u.includes("API_KEY") || u.endsWith("_KEY"))
-            continue;
-        out[k] = v;
+        if (keep.has(fold(k)))
+            out[k] = v;
     }
     return out;
 }
@@ -2709,13 +2721,16 @@ export const CODEX_CHAT_FLAGS = [
 export const CODEX_CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/";
 export const CODEX_OPENAI_BASE_URL = "https://chatgpt.com/backend-api/codex";
 /**
- * Passed to `codex app-server` after {@link CODEX_CHAT_FLAGS}: `-c key=value` sets the two base URLs back to the defaults for this process.
+ * Passed to `codex app-server` after {@link CODEX_CHAT_FLAGS}: `-c key=value` sets the two base URLs back to the defaults for this process, and switches the person's `notify` program off (H-1).
  * A process-level setting is needed because the sign-in check runs at startup, before any thread config exists. The thread config carries the same values.
  * The value has no TOML quotes: Codex reads a `-c` value that is not valid TOML as a plain string, and a bare URL keeps a Windows command line free of quote marks.
  */
 export const CODEX_CHAT_OVERRIDES = [
     "-c", `chatgpt_base_url=${CODEX_CHATGPT_BASE_URL}`,
     "-c", `openai_base_url=${CODEX_OPENAI_BASE_URL}`,
+    // The person's `notify` program (config key `notify`, an array of strings: hacker's repro, HK1-01, REAL; Codex config reference) runs at the end of a turn.
+    // An empty array switches it off. The reference does not say that an empty array disables it: UNPROVEN on real Codex 0.167.2.
+    "-c", "notify=[]",
 ];
 export const CODEX_CHAT_CONFIG = { web_search: "disabled", model_provider: "openai", chatgpt_base_url: CODEX_CHATGPT_BASE_URL, openai_base_url: CODEX_OPENAI_BASE_URL };
 /** Appended to the page's system text. Sub-agents cannot be switched off in Codex 0.167.2, so the model is told to hand off instead. */
@@ -3594,7 +3609,7 @@ export function checkCodexReady(codexBin, env = process.env, platformOpts = {}) 
         // The not-installed sentence is the only launch failure that means no binary. Any other sentence means one was found.
         return Promise.resolve({ ok: false, installed: launch.reason !== CODEX_NOT_INSTALLED, reason: launch.reason });
     }
-    return probeCodexAppServer(launch, os.tmpdir(), codexChildEnv(env), { limits: CODEX_PROBE_CHECK }).then((facts) => {
+    return probeCodexAppServer(launch, os.tmpdir(), codexChildEnv(env, platformOpts.platform, platformOpts.codexKeepEnv), { limits: CODEX_PROBE_CHECK }).then((facts) => {
         if (!facts)
             return { ok: false, installed: true, reason: "Could not start Codex: timed out" };
         const reason = codexHelloReason({
@@ -5851,7 +5866,7 @@ export function createBridge(opts = {}) {
         // A close bumps the generation. A probe that notices it must not write a "Codex failed" cache from its own kill.
         const stale = () => gen !== probeGen || bridgeClosing;
         try {
-            const facts = await probeCodexAppServer(getCodexLaunch(), workDir, codexChildEnv(env), {
+            const facts = await probeCodexAppServer(getCodexLaunch(), workDir, codexChildEnv(env, opts.platformOpts?.platform, opts.platformOpts?.codexKeepEnv), {
                 stale,
                 limits: CODEX_PROBE_HELLO,
                 graceMs: opts.killGraceMs ?? CODEX_KILL_GRACE_MS,
@@ -5952,7 +5967,7 @@ export function createBridge(opts = {}) {
             const launch = getCodexLaunch();
             if (!launch.ok)
                 return resolve({ error: launch.reason, sessionId: mode.sessionId, model: "" });
-            const started = startCodexProcess(launch, workDir, codexChildEnv(env));
+            const started = startCodexProcess(launch, workDir, codexChildEnv(env, opts.platformOpts?.platform, opts.platformOpts?.codexKeepEnv));
             if ("error" in started)
                 return resolve({ error: `Could not start Codex: ${started.error}`, sessionId: mode.sessionId, model: "" });
             const rpc = started.rpc;

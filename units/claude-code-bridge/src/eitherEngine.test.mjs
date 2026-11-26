@@ -141,7 +141,7 @@ describe("checkCodexReady", () => {
       FAKE_CODEX_LOG: log,
       CODEX_HOME: path.join(dir, "codex-home"),
       ...env,
-    });
+    }, { codexKeepEnv: ["FAKE_CODEX_LOG", "FAKE_CODEX_ACCOUNT", "FAKE_CODEX_VERSION", "FAKE_CODEX_UNKNOWN_FLAG"] });
     return { dir, log, result };
   }
 
@@ -203,6 +203,7 @@ describe("claudeNotReady", () => {
       claudeBin: FAKE_CLAUDE,
       codexBin: FAKE_CODEX,
       claudeNotReady: REASON,
+      platformOpts: { codexKeepEnv: ["FAKE_CODEX_LOG"] },
       allowedOrigins: [APP],
       workDir: path.join(dir, "work"),
       home: dir,

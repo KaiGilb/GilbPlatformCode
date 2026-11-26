@@ -22,7 +22,7 @@ const NAMED_FILES = ["src/accessSwitch.test.mjs", "src/windowsService.test.mjs",
 const EXPECTED_TESTS = {
   "src/accessSwitch.test.mjs": 37,
   "src/windowsService.test.mjs": 42,
-  "src/codexEngine.test.mjs": 109,
+  "src/codexEngine.test.mjs": 114,
 };
 
 function shQuote(s) {

@@ -19,7 +19,7 @@
  * FAKE_CODEX_WIDE_REPEATS plus FAKE_CODEX_CHUNK (a long answer outside ASCII, written in small stdout pieces),
  * FAKE_CODEX_DOUBLE_GILB (two rows named gilb), FAKE_CODEX_STATUS (omit-tools, tools-array, no-name),
  * FAKE_CODEX_MODEL_PROVIDER (thread answer modelProvider other than openai),
- * FAKE_CODEX_BIG_LINE (one stdout line longer than 16 MiB), FAKE_CODEX_PHONE_HOME (on account/read, GET the two base URLs it ended up with, loopback only).
+ * FAKE_CODEX_BIG_LINE (one stdout line longer than 16 MiB), a notify program from the config file or `-c notify=[…]` (run at the end of a turn), FAKE_CODEX_PHONE_HOME (on account/read, GET the two base URLs it ended up with, loopback only).
  * Prompt words, also guesses: SILENT (nothing after turn/start), TICK (a status line on a timer, no item),
  * EARLYSHELL (a commandExecution item before the turn/start answer), COMPLETEDSHELL (that item only as
  * item/completed), UPDATEDSHELL (only as item/updated), NOANSWER (turn/completed with no agentMessage),
@@ -27,6 +27,7 @@
  * TOOLTHENFAIL (one tool call, then a failed turn), ITEMS:<base64 JSON array of notifications> (written as given, then an answer), ACCTUPDATE (an account/updated notice with authMode FAKE_CODEX_ACCT_MODE, then an answer).
  */
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import readline from "node:readline";
 import crypto from "node:crypto";
 
@@ -35,7 +36,8 @@ const logPath = process.env.FAKE_CODEX_LOG;
 const log = (o) => logPath && fs.appendFileSync(logPath, JSON.stringify({ pid: process.pid, ...o }) + "\n");
 
 // First line, before a stop or an unknown-flag exit: teardown waits on this pid, and tests read argv and env names.
-log({ event: "boot", argv, cwd: process.cwd(), envNames: Object.keys(process.env).sort() });
+// canary: true when any value holds the tests' canary text; the value itself is never logged.
+log({ event: "boot", argv, cwd: process.cwd(), envNames: Object.keys(process.env).sort(), canary: Object.values(process.env).some((v) => String(v).includes("H1-CANARY-VALUE")) });
 // Guess: a child that stays up after SIGTERM. The real Codex was not measured to ignore it.
 process.on("SIGTERM", () => {
   log({ event: "sigterm" });
@@ -44,22 +46,33 @@ process.on("SIGTERM", () => {
 });
 
 // Guess: the config the person's CODEX_HOME/config.toml and the `-c key=value` arguments give. Real Codex was not measured to read them this way.
-// Only the two base URLs are read. A later -c wins over the file. The value is TOML, so a quoted string loses its quotes.
+// Only the two base URLs and `notify` (an array of strings, written as JSON) are read. A later -c wins over the file. The value is TOML, so a quoted string loses its quotes.
 function effectiveConfig() {
   const cfg = {};
   try {
     const text = fs.readFileSync(`${process.env.CODEX_HOME ?? ""}/config.toml`, "utf8");
     for (const m of text.matchAll(/^\s*(chatgpt_base_url|openai_base_url)\s*=\s*"([^"]*)"/gm)) cfg[m[1]] = m[2];
+    const n = /^\s*notify\s*=\s*(\[.*\])\s*$/m.exec(text);
+    if (n) cfg.notify = JSON.parse(n[1]);
   } catch { /* no config file */ }
   for (let i = 0; i < argv.length - 1; i++) {
     if (argv[i] !== "-c") continue;
     const m = /^(chatgpt_base_url|openai_base_url)=(.*)$/.exec(argv[i + 1]);
     if (m) cfg[m[1]] = m[2].replace(/^"(.*)"$/, "$1");
+    const n = /^notify=(\[.*\])$/.exec(argv[i + 1]);
+    if (n) cfg.notify = JSON.parse(n[1]);
   }
   return cfg;
 }
 const config = effectiveConfig();
 log({ event: "config", ...config });
+// Guess: Codex runs the notify program at the end of a turn with the JSON payload as its last argument and its own environment (the hacker's HK1-01 run saw the marker run once at the end of a turn). An empty array runs nothing.
+function runNotify(payload) {
+  const cmd = Array.isArray(config.notify) ? config.notify : [];
+  if (cmd.length === 0) return;
+  log({ event: "notify-run", cmd0: cmd[0] });
+  spawnSync(String(cmd[0]), [...cmd.slice(1).map(String), JSON.stringify(payload)], { env: process.env, stdio: "ignore", timeout: 5000 });
+}
 /** FAKE_CODEX_PHONE_HOME=1: like real Codex at startup (hacker's log), GET both base URLs with sign-in header names. Only a loopback address is called, never a real host. */
 async function phoneHome() {
   if (process.env.FAKE_CODEX_PHONE_HOME !== "1") return;
@@ -190,6 +203,7 @@ function finishTurn(threadId, turnId, text, phase) {
   note("item/completed", { threadId, turnId, item });
   usageNote(threadId);
   note("turn/completed", { threadId, turn: { id: turnId, status: "completed", error: null } });
+  runNotify({ type: "agent-turn-complete", "thread-id": threadId, "turn-id": turnId });
 }
 
 /**

@@ -64,6 +64,9 @@ let claudeLog;
 let lines;
 let open = [];
 
+// The keep list drops the stand-in's FAKE_CODEX_* controls, so the tests name them as extra kept names (platformOpts.codexKeepEnv).
+const fakeKeep = (env) => Object.keys(env).filter((n) => n.startsWith("FAKE_CODEX_"));
+
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn, ms = 15000) => {
   for (let i = 0; i < ms / 25; i++) {
@@ -96,6 +99,18 @@ async function startBridge(extra = {}) {
   claudeLog = path.join(dir, "claude.log");
   lines = [];
   fs.mkdirSync(path.join(dir, "codex-home"));
+  const childEnvIn = {
+    ...process.env,
+    FAKE_CODEX_LOG: codexLog,
+    FAKE_CLAUDE_LOG: claudeLog,
+    CODEX_HOME: path.join(dir, "codex-home"),
+    OPENAI_API_KEY: "sk-test",
+    openai_api_key: "sk-lower",
+    CODEX_API_KEY: "codex-key",
+    CODEX_ACCESS_TOKEN: "codex-token",
+    AZURE_OPENAI_API_KEY: "azure-key",
+    ...(extra.env ?? {}),
+  };
   bridge = createBridge({
     port: 0,
     claudeBin: FAKE_CLAUDE,
@@ -106,18 +121,8 @@ async function startBridge(extra = {}) {
     log: (l) => lines.push(String(l)),
     ...(extra.now ? { now: extra.now } : {}),
     ...(extra.opts ?? {}),
-    env: {
-      ...process.env,
-      FAKE_CODEX_LOG: codexLog,
-      FAKE_CLAUDE_LOG: claudeLog,
-      CODEX_HOME: path.join(dir, "codex-home"),
-      OPENAI_API_KEY: "sk-test",
-      openai_api_key: "sk-lower",
-      CODEX_API_KEY: "codex-key",
-      CODEX_ACCESS_TOKEN: "codex-token",
-      AZURE_OPENAI_API_KEY: "azure-key",
-      ...(extra.env ?? {}),
-    },
+    platformOpts: { ...(extra.opts?.platformOpts ?? {}), codexKeepEnv: fakeKeep(childEnvIn) },
+    env: childEnvIn,
   });
   await bridge.start();
   base = `http://127.0.0.1:${bridge.port}`;
@@ -213,96 +218,33 @@ const waitCodex = async () => {
 };
 
 describe("codexChildEnv", () => {
-  it("drops secret-like names and does not add the Claude tool timeouts", () => {
-    // Spec: Chat.CodexConnect round 3 R5 — the Codex child is the plain environment minus billing and secret-like names.
-    // Proves: OpenAI names, TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL, API_KEY and a trailing _KEY are removed.
-    // Proves: CODEX_HOME, PATH, HOME, proxy names, SSH_AUTH_SOCK and locale names stay, and the Claude tool timeouts are not added.
-    const out = codexChildEnv({
-      PATH: "/bin",
-      HOME: "/home/person",
-      CODEX_HOME: "/home/person/.codex",
-      LANG: "en_US.UTF-8",
-      LC_ALL: "en_US.UTF-8",
-      HTTP_PROXY: "http://proxy.example",
-      http_proxy: "http://proxy.example",
-      HTTPS_PROXY: "http://proxy.example",
-      NO_PROXY: "localhost",
-      ALL_PROXY: "http://proxy.example",
-      SSH_AUTH_SOCK: "/tmp/ssh",
-      OPENAI_API_KEY: "sk",
-      openai_api_key: "sk2",
-      OPENAI_BASE_URL: "https://example.invalid",
-      CODEX_API_KEY: "k",
-      CODEX_ACCESS_TOKEN: "t",
-      AZURE_OPENAI_API_KEY: "a",
-      codex_api_key: "k2",
-      CODEX_CONNECTORS_TOKEN: "c",
-      GITHUB_TOKEN: "g",
-      AWS_SECRET_ACCESS_KEY: "s",
-      OPENROUTER_API_KEY: "o",
-      MY_PASSWORD: "p",
-      DB_PASSWD: "p2",
-      USER_CREDENTIAL: "c2",
-      SOME_KEY: "k2",
-      KEEP_ME: "yes",
-      ANTHROPIC_API_KEY: "anth",
-    });
-    expect(out.CODEX_HOME).toBe("/home/person/.codex");
-    expect(out.KEEP_ME).toBe("yes");
-    expect(out.PATH).toBe("/bin");
-    expect(out.HOME).toBe("/home/person");
-    expect(out.LANG).toBe("en_US.UTF-8");
-    expect(out.LC_ALL).toBe("en_US.UTF-8");
-    expect(out.HTTP_PROXY).toBe("http://proxy.example");
-    expect(out.http_proxy).toBe("http://proxy.example");
-    expect(out.HTTPS_PROXY).toBe("http://proxy.example");
-    expect(out.NO_PROXY).toBe("localhost");
-    expect(out.ALL_PROXY).toBe("http://proxy.example");
-    expect(out.SSH_AUTH_SOCK).toBe("/tmp/ssh");
-    expect(out.MCP_TOOL_TIMEOUT).toBeUndefined();
-    expect(out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT).toBeUndefined();
-    const bad = Object.keys(out).filter((k) => /TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_KEY/i.test(k) || k.toUpperCase().endsWith("_KEY") || k.toUpperCase().startsWith("OPENAI_") || k.toUpperCase() === "ANTHROPIC_API_KEY");
-    expect(bad).toEqual([]);
+  it("keeps only the keep list and drops every other name", () => {
+    // Spec: H-1 HK1-01 — the Codex child gets a keep list. Proves the listed names stay, and SSH_AUTH_SOCK and the rest go.
+    const kept = {
+      PATH: "/bin", HOME: "/home/person", CODEX_HOME: "/home/person/.codex", TMPDIR: "/tmp", LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8", LC_CTYPE: "UTF-8",
+      USER: "person", LOGNAME: "person", SHELL: "/bin/zsh",
+      HTTP_PROXY: "http://p", HTTPS_PROXY: "http://p", NO_PROXY: "localhost", ALL_PROXY: "http://p",
+      http_proxy: "http://p", https_proxy: "http://p", no_proxy: "localhost", all_proxy: "http://p",
+    };
+    const dropped = {
+      SSH_AUTH_SOCK: "/tmp/ssh", LANGUAGE: "en", LC_MESSAGES: "C", TERM: "xterm", PASSPHRASE: "x", OPENAI_API_KEY: "sk", KEEP_ME: "yes", ANTHROPIC_API_KEY: "a",
+      MCP_TOOL_TIMEOUT: "1", CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: "1", SystemRoot: "C:\\Windows", TEMP: "/t", "path": "/lower-path", Home: "/h",
+    };
+    expect(codexChildEnv({ ...kept, ...dropped }, "darwin")).toEqual(kept);
   });
 
-  test("removes a secret-like name that starts with LC_ and keeps the known locale names", () => {
-    // Spec: fix order R5 — every token, secret, password and key name is taken out of the Codex child's environment (tester round 2, N1)
-    // arrange
-    const input = {
-      LC_API_KEY: "x",
-      LC_GITHUB_TOKEN: "x",
-      lc_secret: "x",
-      LC_OPENAI_API_KEY: "x",
-      LC_ALL: "C",
-      LC_CTYPE: "UTF-8",
-      LANG: "en_US.UTF-8",
-      LANGUAGE: "en",
-      PATH: "/bin",
-    };
-    // act
-    const out = codexChildEnv(input);
-    // assert
-    expect(out).toEqual({
-      LC_ALL: "C",
-      LC_CTYPE: "UTF-8",
-      LANG: "en_US.UTF-8",
-      LANGUAGE: "en",
-      PATH: "/bin",
-    });
-    // Measured at 7fa3ca50 against bridge/bridge.mjs: childEnv keeps these names and adds the two Claude timeouts.
-    expect(childEnv(input)).toEqual({
-      LC_API_KEY: "x",
-      LC_GITHUB_TOKEN: "x",
-      lc_secret: "x",
-      LC_OPENAI_API_KEY: "x",
-      LC_ALL: "C",
-      LC_CTYPE: "UTF-8",
-      LANG: "en_US.UTF-8",
-      LANGUAGE: "en",
-      PATH: "/bin",
-      MCP_TOOL_TIMEOUT: "1860000",
-      CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: "1860000",
-    });
+  it("matches names exactly on Mac and Linux and without regard to case on Windows, and adds the Windows names only there", () => {
+    // Spec: H-1 HK1-01 — names are case-sensitive on Mac/Linux and not on Windows; the Windows names are kept only on Windows.
+    const input = { Path: "C:\\bin", path: "/x", SYSTEMROOT: "C:\\Windows", comspec: "cmd", TEMP: "t", tmp: "t2", USERPROFILE: "u", PASSPHRASE: "x", SSH_AUTH_SOCK: "s", http_Proxy: "p" };
+    expect(Object.keys(codexChildEnv(input, "darwin"))).toEqual([]);
+    expect(Object.keys(codexChildEnv(input, "linux"))).toEqual([]);
+    expect(codexChildEnv(input, "win32")).toEqual({ Path: "C:\\bin", path: "/x", SYSTEMROOT: "C:\\Windows", comspec: "cmd", TEMP: "t", tmp: "t2", USERPROFILE: "u", http_Proxy: "p" });
+  });
+
+  it("an extra kept name works, and a billing or OpenAI key name is refused even then", () => {
+    // Spec: H-1 HK1-01 — only embedding code can add names, and it cannot bring an API key back.
+    const out = codexChildEnv({ FAKE_CODEX_LOG: "l", OPENAI_API_KEY: "sk", CODEX_API_KEY: "k", ANTHROPIC_API_KEY: "a", PATH: "/bin" }, "darwin", ["FAKE_CODEX_LOG", "OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY"]);
+    expect(out).toEqual({ FAKE_CODEX_LOG: "l", PATH: "/bin" });
   });
 });
 
@@ -1104,7 +1046,7 @@ describe("finding the Codex binary", () => {
       workDir: path.join(dir, "work"),
       home: dir,
       now: () => clock,
-      platformOpts: { platform: "darwin", nodePath: path.join(nodeDir, "node"), fixedDirs: fixed },
+      platformOpts: { platform: "darwin", nodePath: path.join(nodeDir, "node"), fixedDirs: fixed, codexKeepEnv: ["FAKE_CODEX_LOG"] },
       log: (l) => lines.push(String(l)),
       env: {
         PATH: binDir,
@@ -1410,5 +1352,94 @@ describe("HK1-06 sign-in headers cannot be redirected", () => {
     expect(text).toContain("`chatgpt_base_url`");
     expect(text).toContain("`openai_base_url`");
     expect(text).toContain("listener2.hk1.jsonl");
+  });
+});
+
+// Spec: H-1 HK1-01 — the Codex child gets a keep list, and the person's notify program is off in a chat turn.
+// The 27 names are the hacker's canary names (QA-2026-11-26 section 5). OPENAI_* stands for three names here.
+const H1_CANARY_NAMES = [
+  "APIKEY", "apikey", "PASSPHRASE", "PRIVATE_KEY_PEM", "AUTH", "GH_PAT", "BEARER", "SESSION_COOKIE", "SIGNING_KEY_B64", "NPM_AUTH", "NPM_CONFIG__AUTH",
+  "AWS_ACCESS_KEY_ID", "DATABASE_URL", "SSH_AUTH_SOCK", "GIT_ASKPASS", "KUBECONFIG",
+  "GITHUB_TOKEN", "github_token", "ANTHROPIC_API_KEY", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "HOMEBREW_GITHUB_API_TOKEN",
+  "OPENAI_BASE_URL", "OPENAI_ORGANIZATION", "OPENAI_API_KEY", "CODEX_API_KEY", "codex_api_key", "AZURE_OPENAI_API_KEY", "openai_api_key",
+];
+const H1_KEEP = ["PATH", "HOME", "CODEX_HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SHELL", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy"];
+
+function writeNotifyProgram(folder) {
+  const marker = path.join(folder, "notify-marker.txt");
+  const program = path.join(folder, "notify-program.mjs");
+  fs.writeFileSync(program, `import fs from "node:fs";\nfs.writeFileSync(${JSON.stringify(marker)}, Object.keys(process.env).join(",") + "|" + Object.values(process.env).join(",") + "\\n");\n`);
+  return { marker, program };
+}
+
+describe("HK1-01 keep list and notify off", () => {
+  it("through the real start path no canary name or value reaches Codex, notify does not run, and Codex still answers", async () => {
+    // Spec: H-1 HK1-01 — checks 1 to 4 of the ruling on the bridge's real start path with a stand-in codex.
+    const canary = Object.fromEntries(H1_CANARY_NAMES.map((n) => [n, `H1-CANARY-VALUE-${n}`]));
+    await startBridge({ env: { ...canary, EXTRA_SECRET_THING: "H1-CANARY-VALUE-extra", HTTPS_PROXY: "http://proxy.invalid" } });
+    const { marker, program } = writeNotifyProgram(dir);
+    fs.writeFileSync(path.join(dir, "codex-home", "config.toml"), `notify = ${JSON.stringify([process.execPath, program])}\n`);
+    const r = await turn(secret, { engine: "codex", prompt: "hi" });
+    expect(r.error).toBeUndefined();
+    expect(r.message.content).toBe("hi"); // 4: Codex starts and answers through the stand-in
+    const boots = rows().filter((row) => row.event === "boot");
+    expect(boots.length).toBeGreaterThan(0);
+    for (const b of boots) {
+      expect(b.canary).toBe(false); // 1: no canary value, PASSPHRASE included
+      for (const n of H1_CANARY_NAMES) expect(b.envNames).not.toContain(n); // 2: all 27 dropped
+      expect(b.envNames).not.toContain("EXTRA_SECRET_THING");
+      // macOS adds __CF_USER_TEXT_ENCODING to a child by itself when it is missing; the bridge does not pass it.
+      const outside = b.envNames.filter((n) => !H1_KEEP.includes(n) && !n.startsWith("FAKE_CODEX_") && n !== "__CF_USER_TEXT_ENCODING");
+      expect(outside).toEqual([]);
+      expect(b.envNames).toContain("CODEX_HOME");
+      expect(b.argv).toContain("notify=[]");
+    }
+    expect(boots.some((b) => b.envNames.includes("HTTPS_PROXY"))).toBe(true);
+    await delay(500); // a late marker would show by now
+    expect(fs.existsSync(marker)).toBe(false); // 3: the notify program did not run
+    expect(rows().some((row) => row.event === "notify-run")).toBe(false);
+  });
+
+  it("known answer: the same stand-in without the bridge's override does run the notify program, and it sees the canary", async () => {
+    // Spec: H-1 HK1-01 — shows the stand-in, the config file and the marker can see a notify run, so the absent marker above means something.
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-codex-notify-"));
+    try {
+      const { marker, program } = writeNotifyProgram(folder);
+      fs.writeFileSync(path.join(folder, "config.toml"), `notify = ${JSON.stringify([process.execPath, program])}\n`);
+      await new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [FAKE_CODEX, "app-server"], { env: { ...process.env, CODEX_HOME: folder, PASSPHRASE: "H1-CANARY-VALUE-x" }, stdio: ["pipe", "pipe", "ignore"] });
+        child.on("error", reject);
+        let out = "";
+        child.stdout.on("data", (d) => { out += d; if (out.includes("turn/completed")) setTimeout(() => { child.kill(); resolve(); }, 1500); });
+        child.stdin.write(JSON.stringify({ id: 1, method: "turn/start", params: { threadId: "t", input: [{ type: "text", text: "hi" }] } }) + "\n");
+      });
+      const seen = fs.readFileSync(marker, "utf8");
+      expect(seen).toContain("PASSPHRASE");
+      expect(seen).toContain("H1-CANARY-VALUE-x");
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it("the hello probe child gets the same keep list and the notify override", async () => {
+    // Spec: H-1 HK1-01 — the probe is another Codex start, so it is cut down too.
+    await startBridge({ env: { PASSPHRASE: "H1-CANARY-VALUE-p" } });
+    const hello = async () => (await fetch(`${base}/v1/hello`, { headers: { "x-bridge-secret": secret } })).json();
+    await until(async () => (await hello()).engines?.find((e) => e.id === "codex")?.ready);
+    const boots = rows().filter((row) => row.event === "boot");
+    expect(boots.length).toBeGreaterThan(0);
+    for (const b of boots) {
+      expect(b.canary).toBe(false);
+      expect(b.envNames).not.toContain("PASSPHRASE");
+      expect(b.argv).toContain("notify=[]");
+    }
+  });
+
+  it("the README names the keep list and says notify is off", () => {
+    // Spec: H-1 HK1-01 — the README no longer lists a drop list and names the keep list and the notify switch
+    const text = fs.readFileSync(path.join(HERE, "../README.md"), "utf8");
+    expect(text).toContain("keep list");
+    expect(text).toContain("`-c notify=[]`");
+    expect(text).not.toContain("a variable whose name contains TOKEN, SECRET");
   });
 });
