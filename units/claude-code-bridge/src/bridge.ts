@@ -2646,8 +2646,13 @@ export async function systemAccessDialog(platform: string, env: NodeJS.ProcessEn
 // Measured on Kai's Mac, Codex CLI 0.167.2. web_search "disabled" is the 2026-11-24 probe. The flag list is the
 // 2026-11-25 measurement: twenty names, with code_mode_host left on (see the comment above CODEX_CHAT_FLAGS).
 
-/** The oldest Codex this bridge will drive. Older than this, hello says to update and a turn stops after the handshake, before account/read. */
-export const CODEX_MIN_VERSION = "0.167.0";
+/**
+ * The only Codex line this bridge drives: this major and minor, any patch of exactly three numbers.
+ * `codex --version` on Codex CLI 0.167.2 prints `codex-cli 0.167.2` (probe result, 2026-11-25).
+ * A higher line gets the sentence for a version this bridge does not support yet.
+ * A lower line keeps the too-old sentence. A turn stops after the handshake, before account/read.
+ */
+export const CODEX_SUPPORTED_LINE = "0.167";
 /** No line from the Codex child for this long ends the turn. Longer than the 31 minutes a relayed tool may take, because Codex sends nothing while it waits for one. */
 export const CODEX_IDLE_MS = 35 * 60 * 1000;
 /** A Codex turn ends after this long even when lines keep arriving. The idle sentence is used: the ruling named one sentence for both stops. */
@@ -2726,11 +2731,26 @@ function codexMcpCallAllowed(item: Record<string, unknown>): boolean {
   return item.server === "codex" && typeof tool === "string" && (CODEX_BUILTIN_MCP_TOOLS as readonly string[]).includes(tool);
 }
 
-/** The first x.y.z after a slash in Codex's userAgent, or null when there is none. */
+/**
+ * The CLI version in Codex's initialize userAgent, or null when it is not the measured shape.
+ * The measured userAgent puts the three numbers from `codex --version` after the first slash, then a space
+ * (`gilb-codex-probe/0.167.2 (Mac OS …)`, 2026-11-24). A letter, a hyphen or another number glued on is not that shape.
+ * @param userAgent The `userAgent` field from initialize.
+ * @returns The three numbers, or null when the text is not a version this bridge can read.
+ */
 export function codexVersionOf(userAgent: unknown): string | null {
-  if (typeof userAgent !== "string") return null;
-  const m = /\/(\d+\.\d+\.\d+)/.exec(userAgent);
-  return m?.[1] ?? null;
+  if (typeof userAgent !== "string" || userAgent.length === 0) return null;
+  const slash = userAgent.indexOf("/");
+  if (slash < 0) return null;
+  const token = userAgent.slice(slash + 1).split(/\s/, 1)[0] ?? "";
+  return /^\d+\.\d+\.\d+$/.test(token) ? token : null;
+}
+
+/** True when `version` is exactly three numbers on {@link CODEX_SUPPORTED_LINE}. */
+function codexOnSupportedLine(version: string): boolean {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!m) return false;
+  return `${Number(m[1])}.${Number(m[2])}` === CODEX_SUPPORTED_LINE;
 }
 
 /**
@@ -2790,7 +2810,11 @@ function codexHelloReason(s: { installed: boolean; version: string | null; suppo
   if (s.lineTooLong) return CODEX_LINE_HELLO;
   if (s.version === null && s.handshook) return CODEX_UNREADABLE_VERSION_HELLO;
   if (s.version === null) return s.startError ?? "Could not start Codex: timed out";
-  if (!s.supported) return CODEX_TOO_OLD;
+  if (!s.supported) {
+    // A higher line is a version this bridge has not been tested with. It is not the too-old sentence.
+    if (s.version && codexVersionAtLeast(s.version, `${CODEX_SUPPORTED_LINE}.0`)) return CODEX_UNKNOWN_HELLO;
+    return CODEX_TOO_OLD;
+  }
   return codexAccountRefusal(s.account) ?? undefined;
 }
 
@@ -3144,6 +3168,7 @@ export const CODEX_FIXED_LOOKUP_DIRS: readonly string[] = ["/opt/homebrew/bin", 
  * manager bin under the home folder that exists (newest version first), then `~/.local/bin`, and on macOS
  * and Linux {@link CODEX_FIXED_LOOKUP_DIRS} unless `fixedDirs` is given. Windows also looks in
  * `%APPDATA%\\npm` and `%LOCALAPPDATA%\\pnpm`.
+ * The person's PATH is trusted, the same way a bare `claude` name is trusted. A `codex` earlier on PATH is the one that runs.
  * A bare-name hit must be a regular file the person may execute. An explicit path must be a regular file (a link is followed).
  * @param name A path, or the bare command name.
  * @param env The environment whose PATH is searched.
@@ -3386,7 +3411,7 @@ async function probeCodexAppServer(launch: ClaudeLaunch, cwd: string, env: NodeJ
     handshook = true;
     rpc.notify("initialized", {});
     version = codexVersionOf(asRecord(init)?.userAgent);
-    supported = !lineTooLong && version !== null && codexVersionAtLeast(version, CODEX_MIN_VERSION);
+    supported = !lineTooLong && version !== null && codexOnSupportedLine(version);
     const accountRes = await rpc.request("account/read", { refreshToken: false }, limits.accountMs);
     if (stale()) return null;
     const classified = classifyCodexAccount(accountRes);
@@ -5770,8 +5795,10 @@ export function createBridge(opts: BridgeOptions = {}) {
             stop();
             return;
           }
-          if (!codexVersionAtLeast(version, CODEX_MIN_VERSION)) {
-            finish({ error: CODEX_TOO_OLD, sessionId: mode.sessionId, model: "", bridgeRefused: true });
+          if (!codexOnSupportedLine(version)) {
+            // Newer than the tested line uses the not-supported sentence. Older keeps the too-old sentence.
+            const newer = codexVersionAtLeast(version, `${CODEX_SUPPORTED_LINE}.0`);
+            finish({ error: newer ? CODEX_UNKNOWN_HELLO : CODEX_TOO_OLD, sessionId: mode.sessionId, model: "", bridgeRefused: true });
             stop();
             return;
           }

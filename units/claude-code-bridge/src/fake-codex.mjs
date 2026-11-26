@@ -14,7 +14,8 @@
  *
  * The switches below are guesses. The real Codex CLI 0.167.2 was not measured to do any of them
  * (probe run 2026-11-24, and the 2026-11-25 chat turns). They exist so a test can force a shape:
- * FAKE_CODEX_NO_VERSION (userAgent with no x.y.z), FAKE_CODEX_IGNORE_TERM (SIGTERM is logged and ignored),
+ * FAKE_CODEX_NO_VERSION (userAgent with no x.y.z), FAKE_CODEX_USER_AGENT (the initialize userAgent, even when empty),
+ * FAKE_CODEX_IGNORE_TERM (SIGTERM is logged and ignored),
  * FAKE_CODEX_WIDE_REPEATS plus FAKE_CODEX_CHUNK (a long answer outside ASCII, written in small stdout pieces),
  * FAKE_CODEX_DOUBLE_GILB (two rows named gilb), FAKE_CODEX_STATUS (omit-tools, tools-array, no-name),
  * FAKE_CODEX_MODEL_PROVIDER (thread answer modelProvider other than openai),
@@ -349,8 +350,11 @@ async function onRequest(id, method, params) {
       return;
     }
     // Guess: a userAgent with no x.y.z. The measured userAgent carried the CLI version.
+    // FAKE_CODEX_USER_AGENT is the whole string, including an empty one, so a test can send a shape the wrapper would hide.
     const version = process.env.FAKE_CODEX_NO_VERSION === "1" ? "" : (process.env.FAKE_CODEX_VERSION || "0.167.2");
-    const userAgent = version ? `gilb-bridge/${version} (fake)` : "gilb-bridge (fake)";
+    const userAgent = process.env.FAKE_CODEX_USER_AGENT !== undefined
+      ? process.env.FAKE_CODEX_USER_AGENT
+      : (version ? `gilb-bridge/${version} (fake)` : "gilb-bridge (fake)");
     respond(id, { userAgent, codexHome: process.env.CODEX_HOME ?? "", platformFamily: "fake", platformOs: "fake" });
     return;
   }

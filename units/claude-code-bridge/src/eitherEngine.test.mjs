@@ -4,7 +4,7 @@
  * The Codex stand-in is fake-codex.mjs, copied from the app-server measurement on Kai's Mac,
  * Codex CLI 0.167.2, 2026-11-24, probe folder /Users/kaigilb/Developer/_tmp/codex-probe/runs/2026-11-24T222311.994Z.
  * Account shapes (chatgpt, apiKey, none) and the unknown-flag stderr line are that measurement.
- * A version older than 0.167.0 is this bridge's own minimum, not a second measurement.
+ * A version off the 0.167 line is this bridge's own rule, not a second measurement.
  */
 import { afterEach, describe, expect, test, vi } from "vitest";
 

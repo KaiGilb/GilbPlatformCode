@@ -27,7 +27,7 @@ import {
   CODEX_CHAT_SENTENCE,
   CODEX_BUILTIN_MCP_TOOLS,
   CODEX_EFFORTS,
-  CODEX_MIN_VERSION,
+  CODEX_SUPPORTED_LINE,
   CODEX_NOT_INSTALLED,
   CODEX_FIXED_LOOKUP_DIRS,
   codexBinOption,
@@ -303,9 +303,9 @@ describe("codexChildEnv", () => {
 });
 
 describe("Codex version and launch", () => {
-  it("reads the version after the slash and compares it with the floor", () => {
-    // Proves: the version is the first x.y.z after a slash, and 0.167.0 is the floor.
-    expect(CODEX_MIN_VERSION).toBe("0.167.0");
+  it("reads an exact three-number version and compares two versions", () => {
+    // Spec: H-5 HK1-05 — the supported range is the one constant, and the compare helper still orders three-number versions
+    expect(CODEX_SUPPORTED_LINE).toBe("0.167");
     expect(codexVersionOf("gilb-bridge/0.167.2 (fake)")).toBe("0.167.2");
     expect(codexVersionOf("no version here")).toBe(null);
     expect(codexVersionAtLeast("0.167.2", "0.167.0")).toBe(true);
@@ -782,7 +782,7 @@ function turnPid() {
 
 describe("round 3 Codex turn limits", () => {
   it("an old Codex is not driven past the handshake", async () => {
-    // Spec: Chat.CodexConnect round 3 F1 — a version below CODEX_MIN_VERSION never gets account/read, a thread, or turn/start.
+    // Spec: Chat.CodexConnect round 3 F1 — a version below the supported line never gets account/read, a thread, or turn/start.
     await startBridge({ env: { FAKE_CODEX_VERSION: "0.100.0" } });
     const r = await turn(secret, { engine: "codex", prompt: "should not run" });
     expect(r.error).toEqual({ message: TOO_OLD });
@@ -1148,5 +1148,100 @@ describe("finding the Codex binary", () => {
     expect(text).toContain("/opt/homebrew/bin");
     expect(text).toContain("/usr/local/bin");
     expect(text).toContain("%LOCALAPPDATA%\\pnpm");
+  });
+});
+
+// Spec: H-5 HK1-05 — the version token is exactly three numbers, and only the 0.167 line is driven.
+const HK1_05_REAL_UA = "gilb-codex-probe/0.167.2 (Mac OS 26.5.1; arm64) Apple_Terminal/470.2 (gilb-codex-probe; 0)";
+const HK1_05_CASES = [
+  { id: "0.167.0", env: { FAKE_CODEX_VERSION: "0.167.0" }, kind: "pass", version: "0.167.0" },
+  { id: "0.167.2", env: { FAKE_CODEX_VERSION: "0.167.2" }, kind: "pass", version: "0.167.2" },
+  { id: "0.168.0", env: { FAKE_CODEX_VERSION: "0.168.0" }, kind: "newer", version: "0.168.0" },
+  { id: "1.0.0", env: { FAKE_CODEX_VERSION: "1.0.0" }, kind: "newer", version: "1.0.0" },
+  { id: "0.166.9", env: { FAKE_CODEX_VERSION: "0.166.9" }, kind: "older", version: "0.166.9" },
+  { id: "0.167.2-beta", env: { FAKE_CODEX_VERSION: "0.167.2-beta" }, kind: "unread" },
+  { id: "v0.167.2", env: { FAKE_CODEX_VERSION: "v0.167.2" }, kind: "unread" },
+  { id: "0.167", env: { FAKE_CODEX_VERSION: "0.167" }, kind: "unread" },
+  { id: "0.167.2.1", env: { FAKE_CODEX_VERSION: "0.167.2.1" }, kind: "unread" },
+  { id: "0.1", env: { FAKE_CODEX_VERSION: "0.1" }, kind: "unread" },
+  { id: "999", env: { FAKE_CODEX_VERSION: "999" }, kind: "unread" },
+  { id: "0.167.2-hk1", env: { FAKE_CODEX_VERSION: "0.167.2-hk1" }, kind: "unread" },
+  { id: "empty", env: { FAKE_CODEX_USER_AGENT: "" }, kind: "unread" },
+  { id: "no-version-text", env: { FAKE_CODEX_USER_AGENT: "no version here" }, kind: "unread" },
+];
+
+describe("HK1-05 strict Codex version", () => {
+  it("takes only an exact three-number token after the slash", () => {
+    // Spec: H-5 HK1-05 — the measured userAgent shape passes, and a suffix, a prefix, a fourth number, an empty string or text with no version does not
+    const parsed = (ua) => codexVersionOf(ua);
+    const misses = [];
+    const check = (ua, want) => {
+      const got = parsed(ua);
+      if (got !== want) misses.push(`${JSON.stringify(ua)} => ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    };
+    check(HK1_05_REAL_UA, "0.167.2");
+    check("gilb-bridge/0.167.0 (fake)", "0.167.0");
+    check("gilb-bridge/0.167.2 (fake)", "0.167.2");
+    check("gilb-bridge/0.168.0 (fake)", "0.168.0");
+    check("gilb-bridge/1.0.0 (fake)", "1.0.0");
+    check("gilb-bridge/0.166.9 (fake)", "0.166.9");
+    check("gilb-bridge/0.167.2-beta (fake)", null);
+    check("gilb-bridge/0.167.2-hk1 (fake)", null);
+    check("gilb-bridge/v0.167.2 (fake)", null);
+    check("gilb-bridge/0.167 (fake)", null);
+    check("gilb-bridge/0.167.2.1 (fake)", null);
+    check("gilb-bridge/0.1 (fake)", null);
+    check("gilb-bridge/999 (fake)", null);
+    check("", null);
+    check("no version here", null);
+    check("codex-cli 0.167.2", null);
+    expect(misses).toEqual([]);
+  });
+
+  it("the README names the 0.167 line and the newer-version sentence", () => {
+    // Spec: H-5 HK1-05 — the supported range and the newer-version sentence are in the README
+    const text = fs.readFileSync(path.join(HERE, "../README.md"), "utf8");
+    expect(text).toContain("0.167.x");
+    expect(text).toContain("This bridge does not support your Codex version yet. Update the bridge.");
+  });
+
+  it.each(HK1_05_CASES)("HK1-05 $id is $kind", async (row) => {
+    // Spec: H-5 HK1-05 — 0.167.0 and 0.167.2 are driven; a newer line gets the not-supported sentence; an older line stays too old; any other shape is not read
+    await startBridge({ env: row.env });
+    const r = await turn(secret, { engine: "codex", prompt: "hk1-05" });
+    if (row.kind === "pass") {
+      expect(r.error).toBeUndefined();
+      expect(r.message.content).toBe("hk1-05");
+    } else if (row.kind === "newer") {
+      expect(r.error).toEqual({ message: UNKNOWN_HELLO });
+      expect(rpcs("turn/start")).toHaveLength(0);
+    } else if (row.kind === "older") {
+      expect(r.error).toEqual({ message: TOO_OLD });
+      expect(rpcs("turn/start")).toHaveLength(0);
+    } else {
+      expect(r.error).toEqual({ message: UNREAD_TURN });
+      expect(rpcs("turn/start")).toHaveLength(0);
+    }
+    const codex = await waitCodex();
+    if (row.kind === "pass") {
+      expect(codex.ready).toBe(true);
+      expect(codex.supported).toBe(true);
+      expect(codex.version).toBe(row.version);
+    } else if (row.kind === "newer") {
+      expect(codex.ready).toBe(false);
+      expect(codex.supported).toBe(false);
+      expect(codex.version).toBe(row.version);
+      expect(codex.reason).toBe(UNKNOWN_HELLO);
+    } else if (row.kind === "older") {
+      expect(codex.ready).toBe(false);
+      expect(codex.supported).toBe(false);
+      expect(codex.version).toBe(row.version);
+      expect(codex.reason).toBe(TOO_OLD);
+    } else {
+      expect(codex.ready).toBe(false);
+      expect(codex.supported).toBe(false);
+      expect(codex.version).toBeNull();
+      expect(codex.reason).toBe(UNREAD_HELLO);
+    }
   });
 });
