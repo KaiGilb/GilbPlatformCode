@@ -2807,8 +2807,9 @@ function codexOnSupportedLine(version: string): boolean {
 
 /**
  * True when `version` is at least `min`. Both must be x.y.z. Anything else is not new enough.
+ * The callers pass the first release of the supported line, to tell a newer Codex (not supported yet) from an older one (too old).
  * @param version The version read from Codex.
- * @param min The oldest version this bridge drives.
+ * @param min The version to compare with: the first release of {@link CODEX_SUPPORTED_LINE}.
  */
 export function codexVersionAtLeast(version: string, min: string): boolean {
   const part = (s: string): [number, number, number] | null => {
@@ -3452,7 +3453,7 @@ interface CodexProbeHooks {
  * Returns null when `stale` is true.
  * @param launch How to start Codex. Not ok means it was not found, which this function reports as not installed.
  * @param cwd The child's working folder. The probe reads nothing from it.
- * @param env The child's environment, already without API keys.
+ * @param env The child's environment. {@link codexChildEnv} has already cut it down to the keep list, so no key or secret is in it.
  * @param hooks Stale check, child hooks, and time limits.
  * @returns What the probe learned, or null when it was told to stop.
  */
@@ -3552,7 +3553,7 @@ function codexBillingLine(plan: string | null): string {
  * Asks Codex whether this computer can run a chat turn: the binary starts, the version is one this bridge knows,
  * and the account is a ChatGPT sign-in. The same probe as hello, with a 20 second limit. No e-mail address is returned.
  * @param codexBin The `codex` command, or a path to it.
- * @param env The environment. API-key variables are removed before Codex starts.
+ * @param env The bridge's environment. Only the names on the keep list ({@link CODEX_ENV_KEEP}) reach Codex; every other name is dropped.
  * @param platformOpts How to find and start the binary. Tests pass these.
  * @returns Ready, with the version and the plan, or not ready, with whether a binary was found and the one sentence to show.
  */
