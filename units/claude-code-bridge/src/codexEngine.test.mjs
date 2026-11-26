@@ -475,8 +475,8 @@ describe("a Codex chat turn", () => {
     expect(live.events.find((e) => e[0] === "message")?.[1].content).toBe("ECHO:hi");
   });
 
-  it("a shell item, a foreign tool, a child shell and a sub-agent start stop the turn", async () => {
-    // Proves: the item guard watches every thread, and a sub-agent start (not on the allow list) stops the turn.
+  it("a shell item, a foreign tool and a child shell stop the turn; a sub-agent's answer does not", async () => {
+    // Proves: the item guard watches every thread, and a sub-agent start is allowed while its own final answer is not this turn's answer.
     // Proves: an mcpToolCall on server codex is allowed for list_mcp_resources and stopped for any other tool. FOREIGNMCP is still stopped.
     await startBridge();
     expect((await turn(secret, { engine: "codex", prompt: "SHELLITEM" })).error).toEqual({ message: GUARD });
@@ -487,10 +487,11 @@ describe("a Codex chat turn", () => {
     expect((await turn(secret, { engine: "codex", prompt: "CODEXOTHER" })).error).toEqual({ message: GUARD });
     expect((await turn(secret, { engine: "codex", prompt: "CHILDSHELL" })).error).toEqual({ message: GUARD });
     expect(lines.some((l) => l.includes("commandExecution"))).toBe(true);
-    // Since H-2 the item type collabAgentToolCall is not on the allow list, so a sub-agent start ends the turn. Its answer never becomes this turn's.
+    // H-2b: collabAgentToolCall is on the allow list (the child thread inherits the lock-down), so a sub-agent start does not stop the turn.
     const sub = await turn(secret, { engine: "codex", prompt: "SUBAGENT please" });
-    expect(sub.error).toEqual({ message: GUARD });
-    expect(sub.message).toBeUndefined();
+    expect(sub.error).toBeUndefined();
+    expect(sub.message.content).toBe("SUBAGENT please");
+    expect(sub.message.content).not.toBe("CHILD-ANSWER");
   });
 
   it("a foreign server starting during the turn stops it with the tools sentence", async () => {
@@ -1293,7 +1294,12 @@ const H2_STOPS = [
   ["a tool call with no server", itemNote({ type: "mcpToolCall", tool: "t1" })],
   ["a tool call to server codex, another tool", itemNote({ type: "mcpToolCall", server: "codex", tool: "something_else" })],
   ["rawResponseItem/completed carrying local_shell_call", itemNote({ type: "local_shell_call" }, "rawResponseItem/completed")],
-  ["a sub-agent start", itemNote({ type: "collabAgentToolCall" })],
+  ["CollabAgentToolCall", itemNote({ type: "CollabAgentToolCall" })],
+  ["collabAgentToolCall with a trailing space", itemNote({ type: "collabAgentToolCall " })],
+  ["Plan", itemNote({ type: "Plan" })],
+  ["contextcompaction", itemNote({ type: "contextcompaction" })],
+  [" contextCompaction (leading space)", itemNote({ type: " contextCompaction" })],
+  ["subAgentActivity", itemNote({ type: "subAgentActivity" })],
   ["commandExecution as item/updated", itemNote({ type: "commandExecution" }, "item/updated")],
   ["an item that is null", [{ method: "item/started", params: { threadId: "$T", item: null } }]],
   ["an item that is a string", [{ method: "item/started", params: { threadId: "$T", item: "agentMessage" } }]],
@@ -1308,6 +1314,9 @@ const H2_PASSES = [
   ["codex list_mcp_resources", itemNote({ type: "mcpToolCall", server: "codex", tool: "list_mcp_resources" })],
   ["codex list_mcp_resource_templates", itemNote({ type: "mcpToolCall", server: "codex", tool: "list_mcp_resource_templates" })],
   ["codex read_mcp_resource", itemNote({ type: "mcpToolCall", server: "codex", tool: "read_mcp_resource" })],
+  ["collabAgentToolCall (a sub-agent start)", itemNote({ type: "collabAgentToolCall" })],
+  ["plan", itemNote({ type: "plan" })],
+  ["contextCompaction", itemNote({ type: "contextCompaction" })],
   ["a notification with no item", [{ method: "thread/status/changed", params: { threadId: "$T", status: "idle" } }]],
 ];
 
@@ -1326,6 +1335,13 @@ describe("HK1-02 item allow list", () => {
     const r = await turn(secret, { engine: "codex", prompt: `ITEMS:${b64(notes)}` });
     expect(r.error).toBeUndefined();
     expect(r.message.content).toBe("items-done");
+  });
+
+  it("the README names the seven allowed types and puts sub-agents on the list", () => {
+    // Spec: H-2b — the README says a sub-agent start, plan and contextCompaction pass, and subAgentActivity does not
+    const text = fs.readFileSync(path.join(HERE, "../README.md"), "utf8");
+    expect(text).toContain("`mcpToolCall`, `collabAgentToolCall`, `plan` and `contextCompaction`");
+    expect(text).toContain("`subAgentActivity` is not on the list");
   });
 
   it("the README says the guard is an allow list", () => {

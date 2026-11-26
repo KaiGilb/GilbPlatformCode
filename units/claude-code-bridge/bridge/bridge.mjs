@@ -2724,14 +2724,16 @@ const CODEX_LINE_TURN = "The bridge stopped this turn: Codex sent more than it w
 const CODEX_LINE_HELLO = "Could not start Codex: it sent more than the bridge will read.";
 const CODEX_PROVIDER_MSG = "The bridge stopped this turn: your Codex is set to use another model provider. This bridge runs Codex only on your ChatGPT sign-in.";
 /**
- * The only item types a chat turn may carry: the model's words, its reasoning, the page's message, and an MCP tool call
- * (which {@link codexMcpCallAllowed} narrows to this turn's `gilb` server and Codex's own resource tools).
- * Every other type stops the turn. A type Codex adds later is therefore stopped until this list is changed (H-2, HK1-02).
- * That includes `collabAgentToolCall`, `subAgentActivity`, `plan` and `contextCompaction`. This is a ruling, not a measurement
- * of what Codex 0.167.2 sends in a normal chat; if one of them turns out to be normal, the list needs a decision, not a guess.
+ * The only item types a chat turn may carry: the model's words, its reasoning, the page's message, an MCP tool call
+ * (which {@link codexMcpCallAllowed} narrows to this turn's `gilb` server and Codex's own resource tools), and three
+ * that touch no file and no network: `collabAgentToolCall` (a sub-agent start), `plan` and `contextCompaction`.
+ * A sub-agent is allowed because its thread inherits this lock-down and this guard watches every thread of the process
+ * (Kai-Zen ruling 2026-11-24; H-2b, 2026-11-26). `plan` and `contextCompaction` are bookkeeping.
+ * Every other type stops the turn, so a type Codex adds later is stopped until this list is changed (H-2, HK1-02).
+ * `subAgentActivity` is not on the list and stops the turn.
  * Names are compared exactly as Codex writes them: no trimming, no case folding.
  */
-const CODEX_ALLOWED_ITEMS = new Set(["agentMessage", "reasoning", "userMessage", "mcpToolCall"]);
+const CODEX_ALLOWED_ITEMS = new Set(["agentMessage", "reasoning", "userMessage", "mcpToolCall", "collabAgentToolCall", "plan", "contextCompaction"]);
 /**
  * Tools Codex itself exposes on the pseudo-server named `codex`.
  * They list or read the resources of the MCP servers this turn connected, which here is only `gilb`.
