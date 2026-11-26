@@ -246,6 +246,20 @@ describe("codexChildEnv", () => {
     const out = codexChildEnv({ FAKE_CODEX_LOG: "l", OPENAI_API_KEY: "sk", CODEX_API_KEY: "k", ANTHROPIC_API_KEY: "a", PATH: "/bin" }, "darwin", ["FAKE_CODEX_LOG", "OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY"]);
     expect(out).toEqual({ FAKE_CODEX_LOG: "l", PATH: "/bin" });
   });
+
+  it("drops a look-alike of a kept name: the name must match whole, not as a start", () => {
+    // Spec: H-1 HK1-01 — CODEX_HOME2 and LANG2 are not CODEX_HOME and LANG; a name that only starts with a kept name is dropped, on every platform.
+    const input = { CODEX_HOME: "/h/.codex", LANG: "en", CODEX_HOME2: "/other", LANG2: "xx", PATH2: "/p2", HOME_: "/h2" };
+    for (const platform of ["darwin", "linux", "win32"]) {
+      expect(codexChildEnv(input, platform)).toEqual({ CODEX_HOME: "/h/.codex", LANG: "en" });
+    }
+  });
+
+  it.each(["CODEX_ACCESS_TOKEN", "AZURE_OPENAI_API_KEY", "openai_api_key"])("the extra-name seam refuses %s", (name) => {
+    // Spec: H-1 HK1-01 — one named secret per case, so a refusal that is dropped for one name turns exactly that case red. The lower-case name shows the refusal does not depend on case.
+    const out = codexChildEnv({ [name]: "secret-value", PATH: "/bin" }, "darwin", [name]);
+    expect(out).toEqual({ PATH: "/bin" });
+  });
 });
 
 describe("Codex version and launch", () => {
@@ -1112,6 +1126,7 @@ const HK1_05_CASES = [
   { id: "999", env: { FAKE_CODEX_VERSION: "999" }, kind: "unread" },
   { id: "0.167.2-hk1", env: { FAKE_CODEX_VERSION: "0.167.2-hk1" }, kind: "unread" },
   { id: "0.0167.3", env: { FAKE_CODEX_VERSION: "0.0167.3" }, kind: "unread" },
+  { id: "0.1670.0", env: { FAKE_CODEX_VERSION: "0.1670.0" }, kind: "newer", version: "0.1670.0" },
   { id: "empty", env: { FAKE_CODEX_USER_AGENT: "" }, kind: "unread" },
   { id: "no-version-text", env: { FAKE_CODEX_USER_AGENT: "no version here" }, kind: "unread" },
 ];
@@ -1142,6 +1157,7 @@ describe("HK1-05 strict Codex version", () => {
     check("no version here", null);
     check("codex-cli 0.167.2", null);
     check("gilb-bridge/0.0167.3 (fake)", null);
+    check("gilb-bridge/0.1670.0 (fake)", "0.1670.0");
     check("gilb-bridge/00.167.2 (fake)", null);
     check("gilb-bridge/0.167.02 (fake)", null);
     expect(misses).toEqual([]);
@@ -1202,6 +1218,8 @@ describe("HK1-07 account change in a turn", () => {
     { id: "null authMode (signed out)", mode: "none" },
     { id: "no authMode field", mode: "missing" },
     { id: "another word", mode: "amazonBedrock" },
+    { id: "authMode ChatGPT (capital letters)", mode: "ChatGPT" },
+    { id: "authMode ' chatgpt' (leading space)", mode: " chatgpt" },
   ])("a notice with $id stops the turn with the sign-in sentence", async (row) => {
     // Spec: H-7 HK1-07 — a notice that does not say chatgpt stops the turn; the stand-in would have answered after it
     await startBridge({ env: { FAKE_CODEX_ACCT_MODE: row.mode } });
@@ -1238,6 +1256,10 @@ const H2_STOPS = [
   ["a tool call to server Gilb", itemNote({ type: "mcpToolCall", server: "Gilb", tool: "t1" })],
   ["a tool call to server gilb with a trailing space", itemNote({ type: "mcpToolCall", server: "gilb ", tool: "t1" })],
   ["a tool call with no server", itemNote({ type: "mcpToolCall", tool: "t1" })],
+  ["a tool call to server gilb2 (a longer name)", itemNote({ type: "mcpToolCall", server: "gilb2", tool: "t1" })],
+  ["a tool call to server ' gilb' (leading space)", itemNote({ type: "mcpToolCall", server: " gilb", tool: "t1" })],
+  ["a tool call to server GILB (upper case)", itemNote({ type: "mcpToolCall", server: "GILB", tool: "t1" })],
+  ["a tool call to server Codex (case), with an allowed tool name", itemNote({ type: "mcpToolCall", server: "Codex", tool: "list_mcp_resources" })],
   ["a tool call to server codex, another tool", itemNote({ type: "mcpToolCall", server: "codex", tool: "something_else" })],
   ["rawResponseItem/completed carrying local_shell_call", itemNote({ type: "local_shell_call" }, "rawResponseItem/completed")],
   ["CollabAgentToolCall", itemNote({ type: "CollabAgentToolCall" })],
