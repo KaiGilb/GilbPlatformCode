@@ -2671,7 +2671,7 @@ export const CODEX_KILL_GRACE_MS = 3000;
 export const CODEX_LINE_MAX = 16 * 1024 * 1024;
 // code_mode_host is left on because Codex 0.167.2 calls MCP tools through it (measured 2026-11-25: with it off the model cannot call the gilb tool); its JavaScript tool has no file or network access (measured the same day); the item guard is the second line.
 /**
- * Passed to `codex app-server` on every chat turn and on the hello probe.
+ * Passed to `codex app-server` on every chat turn and on the hello probe, with {@link CODEX_CHAT_OVERRIDES} after them.
  * One `--disable` in front of each of the twenty names. An unknown name makes that Codex exit at once: the bridge then says to update.
  */
 export const CODEX_CHAT_FLAGS = [
@@ -2697,7 +2697,27 @@ export const CODEX_CHAT_FLAGS = [
     "--disable", "worktrees",
 ];
 /** Merged into every thread's config. `web_search: "disabled"` is the switch the probe measured. `model_provider` pins the thread to the ChatGPT sign-in (the answer must say `modelProvider` is `openai`). */
-export const CODEX_CHAT_CONFIG = { web_search: "disabled", model_provider: "openai" };
+/**
+ * Where Codex sends the ChatGPT sign-in headers. A person's `config.toml` can point `chatgpt_base_url` or `openai_base_url`
+ * at another host, and Codex then sends `authorization` and `chatgpt-account-id` there while it starts, before the bridge can refuse (H-6, HK1-06).
+ * The two names come from the hacker's listener log (logs/listener2.hk1.jsonl, REAL, Codex 0.167.2): both got those two header names.
+ * The values are Codex's own defaults for a ChatGPT sign-in. The Codex config reference (learn.chatgpt.com/docs/config-file/config-reference,
+ * read 2026-11-26) names both keys and lists no default, so the values are from the Codex source as remembered: UNPROVEN on real Codex 0.167.2.
+ * The other URL keys in that reference (`model_providers.<id>.base_url`, `model_catalog_url`, OTEL endpoints, `mcp_servers.<id>.url`) are not set here:
+ * no evidence shows them receiving the sign-in headers, the model provider is pinned to `openai`, and the person's MCP servers are switched off.
+ */
+export const CODEX_CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/";
+export const CODEX_OPENAI_BASE_URL = "https://chatgpt.com/backend-api/codex";
+/**
+ * Passed to `codex app-server` after {@link CODEX_CHAT_FLAGS}: `-c key=value` sets the two base URLs back to the defaults for this process.
+ * A process-level setting is needed because the sign-in check runs at startup, before any thread config exists. The thread config carries the same values.
+ * The value has no TOML quotes: Codex reads a `-c` value that is not valid TOML as a plain string, and a bare URL keeps a Windows command line free of quote marks.
+ */
+export const CODEX_CHAT_OVERRIDES = [
+    "-c", `chatgpt_base_url=${CODEX_CHATGPT_BASE_URL}`,
+    "-c", `openai_base_url=${CODEX_OPENAI_BASE_URL}`,
+];
+export const CODEX_CHAT_CONFIG = { web_search: "disabled", model_provider: "openai", chatgpt_base_url: CODEX_CHATGPT_BASE_URL, openai_base_url: CODEX_OPENAI_BASE_URL };
 /** Appended to the page's system text. Sub-agents cannot be switched off in Codex 0.167.2, so the model is told to hand off instead. */
 export const CODEX_CHAT_SENTENCE = "Use only the gilb tools. Do not start other agents yourself: when the work needs another agent, use the hand-off tool this chat gives you.";
 /** Efforts a Codex turn may name. Claude's list is separate and does not include `ultra`. */
@@ -3426,7 +3446,7 @@ function stopCodexProcess(child, o = {}) {
 }
 function startCodexProcess(launch, cwd, env) {
     try {
-        const child = spawn(launch.command, [...launch.prefix, "app-server", ...CODEX_CHAT_FLAGS], {
+        const child = spawn(launch.command, [...launch.prefix, "app-server", ...CODEX_CHAT_FLAGS, ...CODEX_CHAT_OVERRIDES], {
             cwd,
             env,
             stdio: ["pipe", "pipe", "pipe"],

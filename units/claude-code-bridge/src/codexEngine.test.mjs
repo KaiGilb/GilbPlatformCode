@@ -8,7 +8,8 @@
 import { afterEach, describe, expect, it, test, vi } from "vitest";
 
 vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import http from "node:http";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -24,6 +25,9 @@ import {
   codexVersionAtLeast,
   CODEX_CHAT_FLAGS,
   CODEX_CHAT_CONFIG,
+  CODEX_CHAT_OVERRIDES,
+  CODEX_CHATGPT_BASE_URL,
+  CODEX_OPENAI_BASE_URL,
   CODEX_CHAT_SENTENCE,
   CODEX_BUILTIN_MCP_TOOLS,
   CODEX_EFFORTS,
@@ -413,7 +417,7 @@ describe("a Codex chat turn", () => {
     const boots = rows().filter((row) => row.event === "boot");
     expect(boots.length).toBeGreaterThan(0);
     for (const b of boots) {
-      expect(b.argv).toEqual(["app-server", ...CODEX_CHAT_FLAGS]);
+      expect(b.argv).toEqual(["app-server", ...CODEX_CHAT_FLAGS, ...CODEX_CHAT_OVERRIDES]);
       expect(b.envNames).toContain("CODEX_HOME");
       expect(b.envNames.filter((n) => n.toUpperCase().startsWith("OPENAI_") || ["CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "AZURE_OPENAI_API_KEY"].includes(n.toUpperCase()))).toEqual([]);
     }
@@ -1349,5 +1353,62 @@ describe("HK1-02 item allow list", () => {
     const text = fs.readFileSync(path.join(HERE, "../README.md"), "utf8");
     expect(text).toContain("allow list");
     expect(text).toContain("`agentMessage`, `reasoning`, `userMessage`");
+  });
+});
+
+// Spec: H-6 HK1-06 — a person's config cannot send the ChatGPT sign-in headers to another host.
+describe("HK1-06 sign-in headers cannot be redirected", () => {
+  it("a person-shaped config pointing both base URLs at a listener sends it 0 requests, and the child's config shows the defaults", async () => {
+    // Spec: H-6 HK1-06 — the stand-in reads CODEX_HOME/config.toml, applies the bridge's -c overrides, and calls only what it ends up with.
+    const hits = [];
+    const listener = http.createServer((req, res) => { hits.push({ url: req.url, headers: Object.keys(req.headers) }); res.end("{}"); });
+    await new Promise((r) => listener.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${listener.address().port}`;
+    try {
+      await startBridge({ env: { FAKE_CODEX_PHONE_HOME: "1" } });
+      fs.writeFileSync(path.join(dir, "codex-home", "config.toml"), `chatgpt_base_url = "${url}/backend-api/"\nopenai_base_url = "${url}/v1"\n`);
+      const r = await turn(secret, { engine: "codex", prompt: "hi" });
+      expect(r.error).toBeUndefined();
+      expect(r.message.content).toBe("hi");
+      expect(hits).toEqual([]);
+      const configs = rows().filter((row) => row.event === "config");
+      expect(configs.length).toBeGreaterThan(0);
+      for (const c of configs) expect(c).toMatchObject({ chatgpt_base_url: CODEX_CHATGPT_BASE_URL, openai_base_url: CODEX_OPENAI_BASE_URL });
+      expect(rpcs("thread/start")[0].params.config).toMatchObject({ chatgpt_base_url: CODEX_CHATGPT_BASE_URL, openai_base_url: CODEX_OPENAI_BASE_URL });
+    } finally {
+      await new Promise((r) => listener.close(r));
+    }
+  });
+
+  it("known answer: the same stand-in without the overrides does call the listener, with the sign-in header names", async () => {
+    // Spec: H-6 HK1-06 — shows the stand-in and listener can see the leak, so 0 requests above means something.
+    const hits = [];
+    const listener = http.createServer((req, res) => { hits.push({ url: req.url, headers: Object.keys(req.headers) }); res.end("{}"); });
+    await new Promise((r) => listener.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${listener.address().port}`;
+    const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-codex-kn-"));
+    try {
+      fs.writeFileSync(path.join(cfgDir, "config.toml"), `chatgpt_base_url = "${url}/backend-api/"\nopenai_base_url = "${url}/v1"\n`);
+      // Async, because a blocked event loop could not answer the stand-in's request.
+      await new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [FAKE_CODEX, "app-server"], { env: { ...process.env, CODEX_HOME: cfgDir, FAKE_CODEX_PHONE_HOME: "1" }, stdio: ["pipe", "pipe", "ignore"] });
+        child.on("error", reject);
+        child.stdout.once("data", () => { child.kill(); resolve(); });
+        child.stdin.write(JSON.stringify({ id: 1, method: "account/read", params: {} }) + "\n");
+      });
+      expect(hits.map((h) => h.url.split("?")[0]).sort()).toEqual(["/backend-api/wham/accounts/check", "/v1/models"]);
+      expect(hits[0].headers).toEqual(expect.arrayContaining(["authorization", "chatgpt-account-id"]));
+    } finally {
+      await new Promise((r) => listener.close(r));
+      fs.rmSync(cfgDir, { recursive: true, force: true });
+    }
+  });
+
+  it("the README names both settings and where they were found", () => {
+    // Spec: H-6 HK1-06 — the README lists chatgpt_base_url and openai_base_url and tags the values UNPROVEN
+    const text = fs.readFileSync(path.join(HERE, "../README.md"), "utf8");
+    expect(text).toContain("`chatgpt_base_url`");
+    expect(text).toContain("`openai_base_url`");
+    expect(text).toContain("listener2.hk1.jsonl");
   });
 });

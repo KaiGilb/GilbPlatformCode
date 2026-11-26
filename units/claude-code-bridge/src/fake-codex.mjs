@@ -19,7 +19,7 @@
  * FAKE_CODEX_WIDE_REPEATS plus FAKE_CODEX_CHUNK (a long answer outside ASCII, written in small stdout pieces),
  * FAKE_CODEX_DOUBLE_GILB (two rows named gilb), FAKE_CODEX_STATUS (omit-tools, tools-array, no-name),
  * FAKE_CODEX_MODEL_PROVIDER (thread answer modelProvider other than openai),
- * FAKE_CODEX_BIG_LINE (one stdout line longer than 16 MiB).
+ * FAKE_CODEX_BIG_LINE (one stdout line longer than 16 MiB), FAKE_CODEX_PHONE_HOME (on account/read, GET the two base URLs it ended up with, loopback only).
  * Prompt words, also guesses: SILENT (nothing after turn/start), TICK (a status line on a timer, no item),
  * EARLYSHELL (a commandExecution item before the turn/start answer), COMPLETEDSHELL (that item only as
  * item/completed), UPDATEDSHELL (only as item/updated), NOANSWER (turn/completed with no agentMessage),
@@ -42,6 +42,33 @@ process.on("SIGTERM", () => {
   if (process.env.FAKE_CODEX_IGNORE_TERM === "1") return;
   process.exit(143);
 });
+
+// Guess: the config the person's CODEX_HOME/config.toml and the `-c key=value` arguments give. Real Codex was not measured to read them this way.
+// Only the two base URLs are read. A later -c wins over the file. The value is TOML, so a quoted string loses its quotes.
+function effectiveConfig() {
+  const cfg = {};
+  try {
+    const text = fs.readFileSync(`${process.env.CODEX_HOME ?? ""}/config.toml`, "utf8");
+    for (const m of text.matchAll(/^\s*(chatgpt_base_url|openai_base_url)\s*=\s*"([^"]*)"/gm)) cfg[m[1]] = m[2];
+  } catch { /* no config file */ }
+  for (let i = 0; i < argv.length - 1; i++) {
+    if (argv[i] !== "-c") continue;
+    const m = /^(chatgpt_base_url|openai_base_url)=(.*)$/.exec(argv[i + 1]);
+    if (m) cfg[m[1]] = m[2].replace(/^"(.*)"$/, "$1");
+  }
+  return cfg;
+}
+const config = effectiveConfig();
+log({ event: "config", ...config });
+/** FAKE_CODEX_PHONE_HOME=1: like real Codex at startup (hacker's log), GET both base URLs with sign-in header names. Only a loopback address is called, never a real host. */
+async function phoneHome() {
+  if (process.env.FAKE_CODEX_PHONE_HOME !== "1") return;
+  const calls = [[config.chatgpt_base_url, "wham/accounts/check"], [config.openai_base_url, "models"]];
+  for (const [base, tail] of calls) {
+    if (!base || !/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(base)) continue;
+    try { await fetch(`${base.replace(/\/?$/, "/")}${tail}`, { headers: { authorization: "Bearer fake-stand-in", "chatgpt-account-id": "fake-account" } }); } catch { /* the listener is the test's */ }
+  }
+}
 
 // Measured: an unknown --disable name makes the app-server exit at once with this stderr line.
 if (process.env.FAKE_CODEX_UNKNOWN_FLAG === "1") {
@@ -380,6 +407,7 @@ async function onRequest(id, method, params) {
     return;
   }
   if (method === "account/read") {
+    await phoneHome();
     respond(id, accountResult());
     return;
   }
