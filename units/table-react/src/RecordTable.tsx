@@ -34,7 +34,7 @@ import {
   type TableRow,
 } from "@kaigilb/gilbplatformcode-table-core";
 import { CellEditor, type AfterCommit } from "./CellEditor";
-import { cellKey, useCellSaves, type CellSaveView, type CellWrite } from "./cellSaves";
+import { cellKey, hostCellSaves, useCellSaves, type CellSaveView, type CellWrite, type HostCellSaves } from "./cellSaves";
 import { CONFLICT_WORDS, ConflictActs } from "./ConflictChoice";
 
 /** A link cell's reference, as the host is asked to draw it. */
@@ -77,8 +77,17 @@ export interface RecordTableProps<R extends BaseRecord = BaseRecord> {
 
 /** What a host passes to let cells be edited. */
 export interface TableEditing<R extends BaseRecord = BaseRecord> {
-  /** Writes one cell (see `CellWrite`): one field of one record, over the value the edit started from. */
-  write: CellWrite;
+  /**
+   * Writes one cell (see `CellWrite`): one field of one record, over the value the edit started from. Not called when the host passes
+   * `saves`; one of the two must be given.
+   */
+  write?: CellWrite;
+  /**
+   * The host owns the saves (since 0.4.0, see `HostCellSaves`): every committed value is the host's at once, each cell draws the host's
+   * view of it, and Retry, "Try again", the clash's two choices and "Change dropped" are the host's acts. The table keeps no copy of a
+   * committed value, has no save machine and no `online` retry of its own, and `held` and `onDropped` are not used.
+   */
+  saves?: HostCellSaves;
   /** Why the person may not change this row (they may read it and not write it), or null when they may. */
   rowReadOnly?: (row: TableRow<R>) => string | null;
   /**
@@ -587,8 +596,8 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
     if (hostsOwn) return { editable: false, reason: hostsOwn };
     return editabilityOf(column, cell, editing?.systemKeys ? { systemKeys: editing.systemKeys } : {});
   };
-  const saves = useCellSaves({
-    write: editing?.write,
+  const ownSaves = useCellSaves({
+    write: editing?.saves ? undefined : editing?.write,
     locale,
     storedOf: (rowId, colId) => {
       const at = cellAt(rowId, colId);
@@ -596,10 +605,13 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
       return { readable: value !== undefined, value: value ?? null };
     },
   });
+  const hostSaves = editing?.saves;
+  const saves = hostSaves ? hostCellSaves(hostSaves) : ownSaves;
   // Back online, every cell whose save got no answer is tried again with no act of the person's, as the card does (tester round 4,
   // R4-F: with the save no longer paused out of sight while offline, the cell says "no connection"; coming back must still save it).
+  // A host that owns the saves sends again itself.
   const retryAllRef = useRef(saves.retryAll);
-  retryAllRef.current = saves.retryAll;
+  retryAllRef.current = hostSaves ? () => undefined : saves.retryAll;
   useEffect(() => {
     const onOnline = () => retryAllRef.current();
     window.addEventListener("online", onOnline);
@@ -608,7 +620,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
   // A value the host holds for a cell (it did not reach the vault before) is drawn as not saved and handed to the cell's save once.
   const heldItems = editing?.held;
   useEffect(() => {
-    if (!heldItems) return;
+    if (!heldItems || hostSaves) return;
     for (const h of heldItems) {
       const key = cellKey(h.rowId, h.columnId);
       if (saves.views.has(key)) continue;
@@ -700,7 +712,11 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
     const stored = storedValueOf(at.cell) ?? null;
     // Nothing to write when the value is what the vault holds, unless a save of this cell is still open (then this settles it).
     const unsettledHere = saves.views.get(key)?.phase !== undefined && saves.views.get(key)?.phase !== "saved" && saves.views.get(key)?.phase !== "note";
-    if (unsettledHere && sameCellValue(parsed.value, stored)) {
+    if (hostSaves) {
+      // The host holds the value from here: it is handed over only when it really changed from what the cell shows (a box opened and
+      // left as it was sends nothing), and a value typed back to the stored one is the host's to settle.
+      if (!sameCellValue(parsed.value, shownValue(key, stored))) saves.commit(edit.rowId, edit.colId, e, parsed.value, edit.base);
+    } else if (unsettledHere && sameCellValue(parsed.value, stored)) {
       // The value typed back to what the vault holds (tester round 6, R6-B): the unsaved one is given up, nothing is sent, the cell's
       // "Saving…" ends, and the host forgets what it held.
       saves.drop(key, null);
@@ -725,7 +741,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
     const key = cellKey(rowId, colId);
     dropDraft(key);
     saves.drop(key, "Change dropped");
-    editing?.onDropped?.(rowId, colId);
+    if (!hostSaves) editing?.onDropped?.(rowId, colId);
     say(rowId, colId, "Change dropped");
   };
   const onRowKeyDownEditing = (e: KeyboardEvent<HTMLElement>, index: number, id: string) => {
@@ -886,7 +902,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
       onUseTheirs={() => {
         if (!selKey || !sel) return;
         saves.useTheirs(selKey);
-        editing?.onDropped?.(sel.rowId, sel.colId);
+        if (!hostSaves) editing?.onDropped?.(sel.rowId, sel.colId);
       }}
       saving={[...saves.views.values()].some((v) => v.phase === "saving")}
       saved={[...saves.views.values()].some((v) => v.phase === "saved")}

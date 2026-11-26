@@ -175,6 +175,58 @@ function CellSaver({ id, rowId, columnId, plan, stored, readable, locale, write,
   return null;
 }
 
+/** One finished edit of a cell, as a host that owns the saves takes it (see {@link HostCellSaves}). */
+export interface CellCommit {
+  rowId: string;
+  columnId: string;
+  plan: EditPlan;
+  /** The value the person gave, or `null` to remove the fact. */
+  value: CellValue | null;
+  /** What the cell showed as stored when the edit started; `undefined` after a save of the cell that did not land (its base stands). */
+  base: CellValue | null | undefined;
+}
+
+/**
+ * The saves of a table whose host owns them (since 0.4.0): the host holds every value after it is committed, decides every send, and
+ * says what each cell shows. The table then keeps no copy of a value once it is committed: only the text of the box being typed in is
+ * the table's, and it is handed to `commit` when the edit is finished. Retry, "Try again", "Keep mine", "Use theirs" and "Change
+ * dropped" are the host's acts, and a cell's clash choice is shown only while the host's view of it is a conflict.
+ */
+export interface HostCellSaves {
+  /** What each cell with something unsaved or something to say shows, by {@link cellKey}. A cell with no entry shows what the vault holds. */
+  views: ReadonlyMap<string, CellSaveView>;
+  /** A finished edit: the value really changed from what the cell showed. */
+  commit(edit: CellCommit): void;
+  /** The cell's Retry. */
+  retry(rowId: string, columnId: string): void;
+  /** "Try again" under the table: every cell that can be tried again. */
+  retryAll(): void;
+  /** After a conflict: the person keeps their value. */
+  keepMine(rowId: string, columnId: string): void;
+  /** After a conflict: the person takes what the vault holds. */
+  useTheirs(rowId: string, columnId: string): void;
+  /** The person gave the cell's unsaved change up (Escape on a cell not saved). */
+  drop(rowId: string, columnId: string): void;
+}
+
+/** A host's saves in the shape the table draws from: no machine, no state of the table's own. */
+export function hostCellSaves(host: HostCellSaves): CellSaves {
+  const split = (key: string): [string, string] => {
+    const at = key.indexOf("\u0000");
+    return [key.slice(0, at), key.slice(at + 1)];
+  };
+  return {
+    views: host.views,
+    commit: (rowId, columnId, plan, value, base) => host.commit({ rowId, columnId, plan, value, base }),
+    retry: (key) => host.retry(...split(key)),
+    retryAll: () => host.retryAll(),
+    keepMine: (key) => host.keepMine(...split(key)),
+    useTheirs: (key) => host.useTheirs(...split(key)),
+    drop: (key) => host.drop(...split(key)),
+    machines: null,
+  };
+}
+
 /** What the table's cells are saved through. */
 export interface CellSaves {
   /** What each cell with a save under way or not landed shows, by {@link cellKey}. */

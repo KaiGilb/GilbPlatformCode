@@ -18,7 +18,7 @@ import type { BaseRecord } from "@kaigilb/gilbplatformcode-base-record";
 import { buildTable, problemOf, type CellValue } from "@kaigilb/gilbplatformcode-table-core";
 import { fieldsOfType, type FieldDeclarations } from "@kaigilb/gilbplatformcode-type-fields";
 import { RecordTable } from "./RecordTable";
-import { CellWriteError, type CellWriteRequest } from "./cellSaves";
+import { CellWriteError, cellKey, type CellSaveView, type CellWriteRequest, type HostCellSaves } from "./cellSaves";
 
 const MASTER = "https://ontology.platform.example.test";
 const VAULT = "https://vault.example.test";
@@ -867,5 +867,120 @@ describe("table-react: editing a cell", () => {
       expect(hasEditor()).toBe(true);
       expect(await violations()).toEqual([]);
     });
+  });
+});
+
+// Tester round 8 (GilbApp table view step 2), R8-A, R8-B, R8-C: beside the card, the table's own copy of a value it had handed on was a
+// second owner of that value (sent again on `online` and by Retry, after the host had a newer one or none). With `saves` the host owns
+// every committed value: these are the rules of that mode. The HOST here is a stand-in that records each act and sets the views.
+describe("table-react: a host that owns the saves (0.4.0)", () => {
+  let acts: string[] = [];
+  let setViews: (v: ReadonlyMap<string, CellSaveView>) => void = () => undefined;
+  const k = (rowId: string, columnId: string) => cellKey(rowId, columnId);
+  function HostOwned() {
+    const [views, set] = useState<ReadonlyMap<string, CellSaveView>>(new Map());
+    setViews = (v) => act(() => set(v));
+    const table = buildTable({ fields, records: START, nameOf: (r) => r.facts["label"] ?? "" });
+    const saves: HostCellSaves = {
+      views,
+      commit: (c) => acts.push(`commit ${c.rowId} ${c.columnId} ${JSON.stringify(c.value)} from ${JSON.stringify(c.base)}`),
+      retry: (r, c) => acts.push(`retry ${r} ${c}`),
+      retryAll: () => acts.push("retryAll"),
+      keepMine: (r, c) => acts.push(`keepMine ${r} ${c}`),
+      useTheirs: (r, c) => acts.push(`useTheirs ${r} ${c}`),
+      drop: (r, c) => acts.push(`drop ${r} ${c}`),
+    };
+    return <RecordTable table={table} onOpenRow={() => undefined} label="Garment stock lines" editing={{ locale: "en-US", saves, onDropped: (r, c) => acts.push(`onDropped ${r} ${c}`) }} />;
+  }
+  afterEach(() => {
+    acts = [];
+  });
+  const offlineView = (value: CellValue | null): CellSaveView => ({ phase: "failed", value, message: "Not saved: no connection. Retry", retry: true });
+
+  test("a finished edit is handed to the host once; the cell then draws only the host's view, and a newer value the host holds is drawn at once (R8-A)", async () => {
+    render(<HostOwned />);
+    go("r1", "altText");
+    key("r1", "Enter");
+    type("warm typed");
+    // The keystroke buffer is the table's until the edit is finished: nothing is handed on while the box is open.
+    expect(acts).toEqual([]);
+    fireEvent.keyDown(editor(), { key: "Enter" });
+    expect(acts).toEqual(['commit r1 a:altText "warm typed" from "warm"']);
+    // Until the host says otherwise the cell shows what the vault holds: the table kept no copy.
+    expect(cellEl("r1", "altText").textContent).toBe("warm");
+    setViews(new Map([[k("r1", "a:altText"), offlineView("warm typed")]]));
+    expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("failed");
+    // The host's value moves on (the person typed more on the card): the cell draws the newest, never the value it was handed.
+    setViews(new Map([[k("r1", "a:altText"), offlineView("warm typed more")]]));
+    expect(cellEl("r1", "altText").textContent).toContain("warm typed more");
+    // Back online the table sends nothing of its own: the host does.
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    await settle();
+    expect(acts).toEqual(['commit r1 a:altText "warm typed" from "warm"']);
+    // Retry and "Try again" are the host's acts.
+    fireEvent.click(screen.getByTestId("record-table-retry"));
+    expect(acts.at(-1)).toBe("retry r1 a:altText");
+    go("r1", "altText");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(acts.at(-1)).toBe("retryAll");
+  });
+
+  test("the host drops a held value (typed back on the card): the cell shows the stored value, and nothing is kept or sent by the table (R8-B)", async () => {
+    render(<HostOwned />);
+    go("r1", "altText");
+    key("r1", "Enter");
+    type("note T");
+    fireEvent.keyDown(editor(), { key: "Enter" });
+    setViews(new Map([[k("r1", "a:altText"), offlineView("note T")]]));
+    expect(cellEl("r1", "altText").textContent).toContain("note T");
+    setViews(new Map());
+    expect(cellEl("r1", "altText").textContent).toBe("warm");
+    expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBeNull();
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    await settle();
+    expect(acts).toEqual(['commit r1 a:altText "note T" from "warm"']);
+    const e = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(e);
+    expect(e.defaultPrevented, "the table asks nothing before the page is left: that is the host's").toBe(false);
+  });
+
+  test("the clash's two choices are the host's acts, and go when the host's conflict goes, wherever it was resolved (R8-C)", () => {
+    render(<HostOwned />);
+    setViews(new Map([[k("r1", "a:altText"), { phase: "conflict", value: "warm mine", theirs: "theirs" }]]));
+    go("r1", "altText");
+    expect(screen.getByTestId("record-table-theirs").textContent).toBe("Changed by someone else: theirs");
+    expect(screen.getByTestId("record-table-mine").textContent).toBe("Yours: warm mine");
+    fireEvent.click(screen.getByRole("button", { name: "Keep mine" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use theirs" }));
+    expect(acts).toEqual(["keepMine r1 a:altText", "useTheirs r1 a:altText"]);
+    // Resolved in the other view: the host's conflict is gone, and so is the choice.
+    setViews(new Map());
+    expect(screen.queryByTestId("record-table-conflict-acts")).toBeNull();
+    expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBeNull();
+  });
+
+  test("a box opened and left as it was hands nothing on; Escape on a cell not saved is the host's drop, and onDropped is not called", () => {
+    render(<HostOwned />);
+    setViews(new Map([[k("r1", "a:altText"), offlineView("held")]]));
+    go("r1", "altText");
+    key("r1", "Enter");
+    expect(editor().value).toBe("held");
+    fireEvent.keyDown(editor(), { key: "Enter" });
+    expect(acts).toEqual([]);
+    go("r1", "altText");
+    key("r1", "Escape");
+    expect(acts).toEqual(["drop r1 a:altText"]);
+    // The host drops it: the cell shows what the vault holds, and the line says the change was dropped.
+    setViews(new Map());
+    expect(cellEl("r1", "altText").textContent).toBe("warm");
+    expect(status()).toBe("stock note: Change dropped");
+  });
+
+  test("a yes-or-no cell's change is handed to the host from the value the host shows", () => {
+    render(<HostOwned />);
+    setViews(new Map([[k("r1", "a:madeForKids"), offlineView(false)]]));
+    go("r1", "madeForKids");
+    key("r1", " ");
+    expect(acts).toEqual(['commit r1 a:madeForKids true from undefined']);
   });
 });
