@@ -74,6 +74,8 @@ describe("sendTurn engines", () => {
         allowedOrigins: ["https://app.example"],
         workDir: path.join(dir, "work"),
         env: { ...process.env, FAKE_CODEX_LOG: logPath },
+        // The bridge's keep list drops FAKE_CODEX_LOG, so the test names it as an extra kept name (the test-only seam).
+        platformOpts: { codexKeepEnv: ["FAKE_CODEX_LOG"] },
       });
       await bridge.start();
       store = memoryStorage();
