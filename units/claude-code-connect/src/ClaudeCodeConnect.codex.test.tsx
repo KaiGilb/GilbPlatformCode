@@ -96,7 +96,8 @@ describe("ClaudeCodeConnect codex", () => {
       for (const { id, place } of tabs) {
         await user.click(screen.getByTestId(`claude-code-tab-${id}`));
         const text = container.textContent ?? "";
-        expect(text).toContain(`Codex, signed in with your ChatGPT subscription. Install it once in ${place}:`);
+        // Spec: Chat.CodexConnect UX-4 — the install line has no comma after Codex (meter: the rendered text contains that sentence)
+        expect(text).toContain(`Codex signed in with your ChatGPT subscription. Install it once in ${place}:`);
         expect(screen.getByTestId("codex-install")).toHaveTextContent("npm install -g @openai/codex");
         expect(screen.getByRole("button", { name: "Copy install command" })).toBeInTheDocument();
         expect(text).toContain("Then sign in:");

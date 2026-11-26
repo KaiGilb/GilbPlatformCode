@@ -569,7 +569,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
         {engine === "codex" ? (
           <li>
             <p className="gcc-text">
-              <strong>Codex</strong>, signed in with your ChatGPT subscription. Install it once in {T}:
+              <strong>Codex</strong> signed in with your ChatGPT subscription. Install it once in {T}:
             </p>
             {cmdBox({ text: "npm install -g @openai/codex", testId: "codex-install", copyLabel: "Copy install command", copiedFlag: copiedCodexInstall, onCopied: () => setCopiedCodexInstall(true) })}
             <p className="gcc-text">Then sign in:</p>
