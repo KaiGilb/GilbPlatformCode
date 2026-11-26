@@ -1166,6 +1166,7 @@ const HK1_05_CASES = [
   { id: "0.1", env: { FAKE_CODEX_VERSION: "0.1" }, kind: "unread" },
   { id: "999", env: { FAKE_CODEX_VERSION: "999" }, kind: "unread" },
   { id: "0.167.2-hk1", env: { FAKE_CODEX_VERSION: "0.167.2-hk1" }, kind: "unread" },
+  { id: "0.0167.3", env: { FAKE_CODEX_VERSION: "0.0167.3" }, kind: "unread" },
   { id: "empty", env: { FAKE_CODEX_USER_AGENT: "" }, kind: "unread" },
   { id: "no-version-text", env: { FAKE_CODEX_USER_AGENT: "no version here" }, kind: "unread" },
 ];
@@ -1195,6 +1196,9 @@ describe("HK1-05 strict Codex version", () => {
     check("", null);
     check("no version here", null);
     check("codex-cli 0.167.2", null);
+    check("gilb-bridge/0.0167.3 (fake)", null);
+    check("gilb-bridge/00.167.2 (fake)", null);
+    check("gilb-bridge/0.167.02 (fake)", null);
     expect(misses).toEqual([]);
   });
 

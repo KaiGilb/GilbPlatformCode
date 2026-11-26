@@ -2738,6 +2738,8 @@ function codexMcpCallAllowed(item) {
     const tool = item.tool;
     return item.server === "codex" && typeof tool === "string" && CODEX_BUILTIN_MCP_TOOLS.includes(tool);
 }
+/** Three numbers with no leading zero, so `0.0167.3` is not read as 0.167.3. Not understood goes the existing way. */
+const CODEX_VERSION_SHAPE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 /**
  * The CLI version in Codex's initialize userAgent, or null when it is not the measured shape.
  * The measured userAgent puts the three numbers from `codex --version` after the first slash, then a space
@@ -2752,14 +2754,14 @@ export function codexVersionOf(userAgent) {
     if (slash < 0)
         return null;
     const token = userAgent.slice(slash + 1).split(/\s/, 1)[0] ?? "";
-    return /^\d+\.\d+\.\d+$/.test(token) ? token : null;
+    return CODEX_VERSION_SHAPE.test(token) ? token : null;
 }
 /** True when `version` is exactly three numbers on {@link CODEX_SUPPORTED_LINE}. */
 function codexOnSupportedLine(version) {
-    const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+    const m = CODEX_VERSION_SHAPE.exec(version);
     if (!m)
         return false;
-    return `${Number(m[1])}.${Number(m[2])}` === CODEX_SUPPORTED_LINE;
+    return `${m[1]}.${m[2]}` === CODEX_SUPPORTED_LINE;
 }
 /**
  * True when `version` is at least `min`. Both must be x.y.z. Anything else is not new enough.
