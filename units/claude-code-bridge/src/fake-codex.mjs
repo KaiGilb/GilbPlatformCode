@@ -24,7 +24,7 @@
  * EARLYSHELL (a commandExecution item before the turn/start answer), COMPLETEDSHELL (that item only as
  * item/completed), UPDATEDSHELL (only as item/updated), NOANSWER (turn/completed with no agentMessage),
  * WIDE (the long answer), BIGLINE (the long line, then an answer the bridge must not show),
- * TOOLTHENFAIL (one tool call, then a failed turn), ACCTUPDATE (an account/updated notice with authMode FAKE_CODEX_ACCT_MODE, then an answer).
+ * TOOLTHENFAIL (one tool call, then a failed turn), ITEMS:<base64 JSON array of notifications> (written as given, then an answer), ACCTUPDATE (an account/updated notice with authMode FAKE_CODEX_ACCT_MODE, then an answer).
  */
 import fs from "node:fs";
 import readline from "node:readline";
@@ -246,6 +246,15 @@ async function runScenario(prompt, threadId, turnId) {
     note("item/updated", { threadId, turnId, item: { type: "commandExecution" } });
     return;
   }
+  const itemsMatch = /ITEMS:([A-Za-z0-9+/=]+)/.exec(prompt);
+  if (itemsMatch) {
+    // Guess: the notices are whatever the test sends, as base64 JSON, one array of whole notifications. $T is this thread's id.
+    // The pause lets a bridge that does not stop on them answer, so the test can see that.
+    for (const n of JSON.parse(Buffer.from(itemsMatch[1], "base64").toString())) process.stdout.write(JSON.stringify(n).replaceAll("$T", threadId) + "\n");
+    await new Promise((r) => setTimeout(r, 300));
+    finishTurn(threadId, turnId, "items-done", "final_answer");
+    return;
+  }
   if (prompt.includes("ACCTUPDATE")) {
     // Guess: the notice shape is the hacker's stand-in (authMode and planType). FAKE_CODEX_ACCT_MODE is the authMode sent; "none" sends null, "missing" sends no authMode.
     const mode = process.env.FAKE_CODEX_ACCT_MODE ?? "apikey";
@@ -259,7 +268,7 @@ async function runScenario(prompt, threadId, turnId) {
     return;
   }
   if (prompt.includes("CASESHELL")) {
-    // Guess: this type string is not in Codex 0.167.2 ThreadItem.ts. It must not stop the turn.
+    // Guess: this type string is not in Codex 0.167.2 ThreadItem.ts. Since H-2 the guard is an allow list, so it stops the turn.
     note("item/started", { threadId, turnId, item: { type: "CommandExecution" } });
     finishTurn(threadId, turnId, "case-kept", "final_answer");
     return;

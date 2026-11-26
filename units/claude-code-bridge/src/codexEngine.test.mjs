@@ -475,8 +475,8 @@ describe("a Codex chat turn", () => {
     expect(live.events.find((e) => e[0] === "message")?.[1].content).toBe("ECHO:hi");
   });
 
-  it("a shell item, a foreign tool and a child shell stop the turn; a sub-agent's answer does not", async () => {
-    // Proves: the item guard watches every thread, and a sub-agent's own final answer is not this turn's answer.
+  it("a shell item, a foreign tool, a child shell and a sub-agent start stop the turn", async () => {
+    // Proves: the item guard watches every thread, and a sub-agent start (not on the allow list) stops the turn.
     // Proves: an mcpToolCall on server codex is allowed for list_mcp_resources and stopped for any other tool. FOREIGNMCP is still stopped.
     await startBridge();
     expect((await turn(secret, { engine: "codex", prompt: "SHELLITEM" })).error).toEqual({ message: GUARD });
@@ -487,10 +487,10 @@ describe("a Codex chat turn", () => {
     expect((await turn(secret, { engine: "codex", prompt: "CODEXOTHER" })).error).toEqual({ message: GUARD });
     expect((await turn(secret, { engine: "codex", prompt: "CHILDSHELL" })).error).toEqual({ message: GUARD });
     expect(lines.some((l) => l.includes("commandExecution"))).toBe(true);
+    // Since H-2 the item type collabAgentToolCall is not on the allow list, so a sub-agent start ends the turn. Its answer never becomes this turn's.
     const sub = await turn(secret, { engine: "codex", prompt: "SUBAGENT please" });
-    expect(sub.error).toBeUndefined();
-    expect(sub.message.content).toBe("SUBAGENT please");
-    expect(sub.message.content).not.toBe("CHILD-ANSWER");
+    expect(sub.error).toEqual({ message: GUARD });
+    expect(sub.message).toBeUndefined();
   });
 
   it("a foreign server starting during the turn stops it with the tools sentence", async () => {
@@ -945,14 +945,12 @@ describe("round 3 Codex tool and item guards", () => {
 
   it("a stop item is caught on every item notification once the thread exists", async () => {
     // Spec: Chat.CodexConnect round 3 F7 — item/completed, item/updated, and an item while turn/start is unanswered.
-    // CommandExecution is not a Codex 0.167.2 item type, so it does not stop the turn.
+    // CommandExecution is not a Codex 0.167.2 item type. Since H-2 the guard is an allow list, so it stops the turn too.
     await startBridge();
     expect((await turnWithin({ engine: "codex", prompt: "COMPLETEDSHELL" })).error).toEqual({ message: GUARD });
     expect((await turnWithin({ engine: "codex", prompt: "UPDATEDSHELL" })).error).toEqual({ message: GUARD });
     expect((await turnWithin({ engine: "codex", prompt: "EARLYSHELL" }, 3000)).error).toEqual({ message: GUARD });
-    const kept = await turn(secret, { engine: "codex", prompt: "CASESHELL" });
-    expect(kept.error).toBeUndefined();
-    expect(kept.message.content).toBe("case-kept");
+    expect((await turnWithin({ engine: "codex", prompt: "CASESHELL" })).error).toEqual({ message: GUARD });
   });
 
   it("the thread pins model_provider openai and refuses another provider", async () => {
@@ -1271,5 +1269,69 @@ describe("HK1-07 account change in a turn", () => {
     const r = await turn(secret, { engine: "codex", prompt: "ACCTUPDATE" });
     expect(r.error).toBeUndefined();
     expect(r.message.content).toBe("acct-kept-going");
+  });
+});
+
+// Spec: H-2 HK1-02 — the item guard is an allow list, matched exactly. Notices are written by the stand-in as given.
+const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64");
+const itemNote = (item, method = "item/started") => [{ method, params: { threadId: "$T", turnId: "t1", item } }];
+const H2_STOPS = [
+  ["shellCall (an unknown type)", itemNote({ type: "shellCall" })],
+  ["an item with no type", itemNote({ command: "x" })],
+  ["a null type", itemNote({ type: null })],
+  ["a number type", itemNote({ type: 7 })],
+  ["an array type", itemNote({ type: ["commandExecution"] })],
+  ["an empty type", itemNote({ type: "" })],
+  ["CommandExecution", itemNote({ type: "CommandExecution" })],
+  ["AgentMessage", itemNote({ type: "AgentMessage" })],
+  ["agentmessage", itemNote({ type: "agentmessage" })],
+  [" agentMessage (leading space)", itemNote({ type: " agentMessage" })],
+  ["agentMessage  (trailing space)", itemNote({ type: "agentMessage " })],
+  ["McpToolCall to a foreign server", itemNote({ type: "McpToolCall", server: "PersonServer", tool: "t1" })],
+  ["a tool call to server Gilb", itemNote({ type: "mcpToolCall", server: "Gilb", tool: "t1" })],
+  ["a tool call to server gilb with a trailing space", itemNote({ type: "mcpToolCall", server: "gilb ", tool: "t1" })],
+  ["a tool call with no server", itemNote({ type: "mcpToolCall", tool: "t1" })],
+  ["a tool call to server codex, another tool", itemNote({ type: "mcpToolCall", server: "codex", tool: "something_else" })],
+  ["rawResponseItem/completed carrying local_shell_call", itemNote({ type: "local_shell_call" }, "rawResponseItem/completed")],
+  ["a sub-agent start", itemNote({ type: "collabAgentToolCall" })],
+  ["commandExecution as item/updated", itemNote({ type: "commandExecution" }, "item/updated")],
+  ["an item that is null", [{ method: "item/started", params: { threadId: "$T", item: null } }]],
+  ["an item that is a string", [{ method: "item/started", params: { threadId: "$T", item: "agentMessage" } }]],
+  ["an item that is an array", [{ method: "item/started", params: { threadId: "$T", item: [{ type: "agentMessage" }] } }]],
+  ["an item with another thread's id", [{ method: "item/started", params: { threadId: "00000000-0000-4000-8000-000000000001", item: { type: "shellCall" } } }]],
+];
+const H2_PASSES = [
+  ["agentMessage", itemNote({ type: "agentMessage", text: "hi" })],
+  ["reasoning", itemNote({ type: "reasoning" })],
+  ["userMessage", itemNote({ type: "userMessage" })],
+  ["a tool call to server gilb", itemNote({ type: "mcpToolCall", server: "gilb", tool: "t1" })],
+  ["codex list_mcp_resources", itemNote({ type: "mcpToolCall", server: "codex", tool: "list_mcp_resources" })],
+  ["codex list_mcp_resource_templates", itemNote({ type: "mcpToolCall", server: "codex", tool: "list_mcp_resource_templates" })],
+  ["codex read_mcp_resource", itemNote({ type: "mcpToolCall", server: "codex", tool: "read_mcp_resource" })],
+  ["a notification with no item", [{ method: "thread/status/changed", params: { threadId: "$T", status: "idle" } }]],
+];
+
+describe("HK1-02 item allow list", () => {
+  it.each(H2_STOPS)("%s stops the turn", async (_name, notes) => {
+    // Spec: H-2 HK1-02 — every item that is not on the allow list, or is unreadable, ends the turn with the guard sentence
+    await startBridge();
+    const r = await turnWithin({ engine: "codex", prompt: `ITEMS:${b64(notes)}` });
+    expect(r.error).toEqual({ message: GUARD });
+    expect(r.message).toBeUndefined();
+  });
+
+  it.each(H2_PASSES)("%s does not stop the turn", async (_name, notes) => {
+    // Spec: H-2 HK1-02 — the allowed items leave the turn running to its answer
+    await startBridge();
+    const r = await turn(secret, { engine: "codex", prompt: `ITEMS:${b64(notes)}` });
+    expect(r.error).toBeUndefined();
+    expect(r.message.content).toBe("items-done");
+  });
+
+  it("the README says the guard is an allow list", () => {
+    // Spec: H-2 HK1-02 — the README names the allowed types and says every other type stops the turn
+    const text = fs.readFileSync(path.join(HERE, "../README.md"), "utf8");
+    expect(text).toContain("allow list");
+    expect(text).toContain("`agentMessage`, `reasoning`, `userMessage`");
   });
 });

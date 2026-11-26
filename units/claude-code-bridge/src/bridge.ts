@@ -2715,8 +2715,15 @@ const CODEX_IDLE_MSG = "Codex stopped answering, so the bridge stopped this turn
 const CODEX_LINE_TURN = "The bridge stopped this turn: Codex sent more than it will read.";
 const CODEX_LINE_HELLO = "Could not start Codex: it sent more than the bridge will read.";
 const CODEX_PROVIDER_MSG = "The bridge stopped this turn: your Codex is set to use another model provider. This bridge runs Codex only on your ChatGPT sign-in.";
-/** Item types that stop a chat turn. `collabAgentToolCall` and `subAgentActivity` are not here: Codex 0.167.2 still emits them with every flag on, and the child thread inherits this lock-down. */
-const CODEX_GUARD_ITEMS = new Set(["commandExecution", "fileChange", "webSearch", "imageView", "imageGeneration", "dynamicToolCall"]);
+/**
+ * The only item types a chat turn may carry: the model's words, its reasoning, the page's message, and an MCP tool call
+ * (which {@link codexMcpCallAllowed} narrows to this turn's `gilb` server and Codex's own resource tools).
+ * Every other type stops the turn. A type Codex adds later is therefore stopped until this list is changed (H-2, HK1-02).
+ * That includes `collabAgentToolCall`, `subAgentActivity`, `plan` and `contextCompaction`. This is a ruling, not a measurement
+ * of what Codex 0.167.2 sends in a normal chat; if one of them turns out to be normal, the list needs a decision, not a guess.
+ * Names are compared exactly as Codex writes them: no trimming, no case folding.
+ */
+const CODEX_ALLOWED_ITEMS: ReadonlySet<string> = new Set(["agentMessage", "reasoning", "userMessage", "mcpToolCall"]);
 /**
  * Tools Codex itself exposes on the pseudo-server named `codex`.
  * They list or read the resources of the MCP servers this turn connected, which here is only `gilb`.
@@ -2906,11 +2913,22 @@ function codexServersRefusal(servers: { name: string; tools: string[] }[] | null
   return null;
 }
 
-/** The item type that stops a chat turn, or null when the item is allowed or has no string type. Names are compared exactly. */
-function codexBlockedItem(item: Record<string, unknown> | null): string | null {
-  if (!item || typeof item.type !== "string") return null;
-  if (CODEX_GUARD_ITEMS.has(item.type)) return item.type;
-  if (item.type === "mcpToolCall" && !codexMcpCallAllowed(item)) return item.type;
+/**
+ * Why an item stops the turn, or null when the notification carries no item or the item is allowed.
+ * This is an allow list. A notification with no `item` key is not an item notification and passes.
+ * An item that is not an object, has no type, or has a type that is not a string stops the turn, because a guard
+ * that skips what it cannot read lets the hostile shape through.
+ * @param params The notification's params.
+ * @returns A short reason for the log, never the item's own text.
+ */
+function codexBlockedItem(params: Record<string, unknown>): string | null {
+  if (!Object.prototype.hasOwnProperty.call(params, "item")) return null;
+  const item = asRecord(params.item);
+  if (!item) return "item is not an object";
+  const type = item.type;
+  if (typeof type !== "string") return "item type is not a string";
+  if (!CODEX_ALLOWED_ITEMS.has(type)) return `item type ${JSON.stringify(type.slice(0, 40))}`;
+  if (type === "mcpToolCall" && !codexMcpCallAllowed(item)) return "mcpToolCall to a server or tool this chat does not allow";
   return null;
 }
 
@@ -5519,7 +5537,7 @@ export function createBridge(opts: BridgeOptions = {}) {
 
   // ---- engine: codex (app-server) ----
   // A chat turn speaks JSON-RPC to `codex app-server`. The person's own servers and local tools stay off.
-  // Sub-agents cannot be switched off in Codex 0.167.2: they inherit this lock-down, and the item guard watches every thread.
+  // Sub-agents cannot be switched off in Codex 0.167.2: they inherit this lock-down, and the item guard (an allow list) watches every thread.
   interface CodexProbeState {
     installed: boolean;
     version: string | null;
@@ -5759,9 +5777,9 @@ export function createBridge(opts: BridgeOptions = {}) {
         // Only the exact word codexAccountUpdateKeeps accepts passes; a missing or odd field is not "still ChatGPT".
         if (method === "account/updated" && !stopReason && !codexAccountUpdateKeeps(params)) stopReason = { kind: "account", detail: "account/updated" };
         // One guard for every notification that carries an item, from the moment this turn's thread exists.
-        // A sub-agent's shell is still a shell. The type name is compared exactly as Codex writes it.
+        // A sub-agent's shell is still a shell. The type name is compared exactly as Codex writes it, against an allow list.
         if (threadId !== "") {
-          const blocked = codexBlockedItem(asRecord(params.item));
+          const blocked = codexBlockedItem(params);
           if (!stopReason && blocked) stopReason = { kind: "guard", detail: blocked };
         }
         const own = threadId !== "" && params.threadId === threadId;
