@@ -3413,11 +3413,148 @@ function waitChildGone(child, ms) {
             finish(true);
     });
 }
+// ---- ending everything a Codex turn started (HK2-01) ---------------------------------------------------------------------
+// A process group is not enough: a descendant that calls setpgid (Codex's own bookkeeping git does) leaves the group but stays in the
+// session, and a child that exits first hands its helpers to init. So the bridge keeps a look at the child's descendants by parent pid during
+// the turn and takes one more look before it signals anything. Then it signals the group and each pid in that snapshot.
+/** How often a live Codex child's descendants are looked at (Mac and Linux). A descendant that lives shorter than this and is gone before the stop is not missed: it is gone. */
+export const CODEX_TREE_LOOK_MS = 200;
+/** A process list that takes longer than this is not waited for at a stop. */
+const CODEX_TREE_LIST_MS = 1500;
+const CODEX_TREE = Symbol("codexTree");
+let ownPgidCache;
+/** The bridge's own process group id (ps), read once. Null when ps cannot say. */
+function ownPgidNow() {
+    if (ownPgidCache !== undefined)
+        return ownPgidCache;
+    try {
+        const n = Number(String(execFileSync("/bin/ps", ["-o", "pgid=", "-p", String(process.pid)], { timeout: 3000, encoding: "utf8", env: { PATH: "/usr/bin:/bin", LC_ALL: "C" } })).trim());
+        ownPgidCache = Number.isInteger(n) && n > 0 ? n : null;
+    }
+    catch {
+        ownPgidCache = null;
+    }
+    return ownPgidCache;
+}
 /**
- * Stops one Codex child. Off Windows the child leads its own process group: SIGTERM goes to the group, and SIGKILL after the grace when a member is
- * still there. The group is signalled even when the child itself has already exited, because what it started in the background stays in the group.
+ * Updates `seen` from one process list: forgets what is gone or reused (start time differs), then adds every descendant of `root`.
+ * When the root itself has exited, nothing is added: its pid may belong to a stranger now, and the stranger's children are not ours.
+ * Returns the rows to end.
+ */
+function mergeCodexSeen(seen, rows, root, rootGone) {
+    const now = new Map(rows.map((r) => [r.pid, r]));
+    for (const [pid, old] of [...seen]) {
+        const cur = now.get(pid);
+        if (!cur || cur.start !== old.start)
+            seen.delete(pid);
+    }
+    if (!rootGone)
+        for (const d of descendantsOf(rows, root))
+            seen.set(d.pid, d);
+    return [...seen.values()];
+}
+/**
+ * Ends a Codex child's whole tree (Mac and Linux). The order matters:
+ * 1. a snapshot of the descendants (a fresh process list merged with what the turn saw), taken before any signal;
+ * 2. SIGTERM to the process group and to each pid in the snapshot;
+ * 3. after the grace, SIGKILL to the group and to each pid in the snapshot that is still the same process.
+ * A pid that is already gone (ESRCH) is not an error. Never signalled: pid 0 or below, pid 1, the bridge's own pid, the bridge's own group,
+ * and any pid that is not in the snapshot. Known limits: a pid can be reused between the snapshot and the SIGKILL (the start time is checked
+ * again just before it, which narrows that but does not close it); a descendant that starts after the snapshot is missed; one that reparented
+ * before the first look is missed; when the process list cannot be read, only the group is signalled.
+ * @param groupPid The Codex child's pid, which is also its process group id. Undefined: no group.
+ * @param seen What the turn saw below the child (may be empty).
+ * @param graceMs Wait between SIGTERM and SIGKILL.
+ * @param deps Signal and list functions. Tests replace them.
+ * @param childExited True when the child has already exited: only what the turn saw is ended, no new descendants are looked up by its pid.
+ * @returns The pids that were in the snapshot.
+ */
+export async function endCodexTree(groupPid, seen, graceMs, deps = {}, childExited = false) {
+    const kill = deps.kill ?? ((pid, sig) => { process.kill(pid, sig); });
+    const ownPid = deps.ownPid ?? process.pid;
+    const ownPgid = deps.ownPgid !== undefined ? deps.ownPgid : ownPgidNow();
+    const list = deps.list ?? (async () => Promise.race([listProcs(process.platform), new Promise((r) => setTimeout(() => r(null), CODEX_TREE_LIST_MS).unref())]));
+    // The one place that decides what may be signalled: a whole number above 1 that is neither this process nor this process's group.
+    // A Codex descendant can never be the bridge's group leader (that is the bridge or one of its parents), so refusing that number as a pid costs nothing.
+    const okPid = (n) => typeof n === "number" && Number.isInteger(n) && n > 1 && n !== ownPid && n !== ownPgid;
+    const send = (pid, sig) => {
+        try {
+            kill(pid, sig);
+            return true;
+        }
+        catch {
+            return false; /* ESRCH: gone. EPERM: not ours. Neither is an error here. */
+        }
+    };
+    const groupAlive = () => (okPid(groupPid) ? send(-groupPid, 0) : false);
+    const pidAlive = (pid) => {
+        if (!okPid(pid))
+            return false;
+        try {
+            kill(pid, 0);
+            return true;
+        }
+        catch (e) {
+            return e.code === "EPERM";
+        }
+    };
+    const rows0 = await list();
+    const snapshot = new Map();
+    if (rows0 && groupPid !== undefined)
+        for (const r of mergeCodexSeen(seen, rows0, groupPid, childExited))
+            if (okPid(r.pid))
+                snapshot.set(r.pid, r);
+    const members = () => [...snapshot.keys()];
+    const anyAlive = () => groupAlive() || members().some(pidAlive);
+    const waitGone = async (ms) => {
+        const until = Date.now() + ms;
+        while (anyAlive() && Date.now() < until)
+            await new Promise((r) => setTimeout(r, 25));
+        return !anyAlive();
+    };
+    if (!anyAlive())
+        return members();
+    if (okPid(groupPid))
+        send(-groupPid, "SIGTERM");
+    for (const pid of members())
+        send(pid, "SIGTERM");
+    if (await waitGone(graceMs))
+        return members();
+    // Before SIGKILL: only a pid that still has the start time it had in the snapshot. A reused pid is left alone.
+    const rows1 = await list();
+    const still = rows1 ? new Map(rows1.map((r) => [r.pid, r])) : null;
+    if (okPid(groupPid))
+        send(-groupPid, "SIGKILL");
+    for (const [pid, row] of snapshot)
+        if (still?.get(pid)?.start === row.start)
+            send(pid, "SIGKILL");
+    await waitGone(3000);
+    return members();
+}
+/** Starts the periodic look at a Codex child's descendants (Mac and Linux). The timer does not keep the process alive. */
+function watchCodexTree(child) {
+    const pid = child.pid;
+    if (process.platform === "win32" || pid === undefined)
+        return;
+    const tree = { seen: new Map(), timer: undefined };
+    let busy = false;
+    tree.timer = setInterval(() => {
+        if (busy)
+            return;
+        busy = true;
+        void listProcs(process.platform).then((rows) => { if (rows)
+            mergeCodexSeen(tree.seen, rows, pid, childGone(child)); }, () => { }).finally(() => { busy = false; });
+    }, CODEX_TREE_LOOK_MS);
+    tree.timer.unref();
+    child[CODEX_TREE] = tree;
+}
+/**
+ * Stops one Codex child. Off Windows the child leads its own process group, and everything below it is ended too ({@link endCodexTree}): a snapshot of its
+ * descendants by parent pid is taken before any signal, then SIGTERM goes to the group and to each pid in the snapshot, and SIGKILL after the grace.
+ * The group is signalled even when the child itself has already exited, because what it started in the background stays in the group.
  * On Windows, the existing tree kill. A second call for the same child waits for the first.
- * Known gap: a grandchild that starts its own session (setsid) leaves the group, and a group signal cannot reach it.
+ * A grandchild that starts its own session (setsid) leaves the group, but it is ended through the snapshot while it is still below the child or was seen there.
+ * Limits: a pid can be reused between the snapshot and the SIGKILL, a descendant that starts after the snapshot is missed, and one that reparented before the first look is missed.
  * @param child The Codex child.
  * @param o Grace, platform, and the Windows taskkill runner. Grace defaults to {@link CODEX_KILL_GRACE_MS}.
  */
@@ -3441,8 +3578,9 @@ function stopCodexProcess(child, o = {}) {
                 await waitChildGone(child, 5000);
             }
             else if (groupPid !== undefined) {
-                // A group that is already gone is not an error: killGroup returns at once.
-                await killGroup(groupPid, grace);
+                // The group and every descendant seen below the child. A pid that is already gone is not an error.
+                const tree = child[CODEX_TREE];
+                await endCodexTree(groupPid, tree?.seen ?? new Map(), grace, o.treeDeps, childGone(child));
                 await waitChildGone(child, 5000);
             }
             else if (!childGone(child)) {
@@ -3463,6 +3601,9 @@ function stopCodexProcess(child, o = {}) {
             child.stderr?.destroy();
         }
         finally {
+            const tree = child[CODEX_TREE];
+            if (tree?.timer)
+                clearInterval(tree.timer);
             finishJob();
         }
     })();
@@ -3481,6 +3622,7 @@ function startCodexProcess(launch, cwd, env) {
         child[CODEX_CHILD] = true;
         if (process.platform !== "win32" && child.pid !== undefined)
             child[GROUP_LEADER] = child.pid;
+        watchCodexTree(child);
         return { rpc: new CodexRpc(child) };
     }
     catch (e) {

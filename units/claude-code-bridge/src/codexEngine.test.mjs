@@ -36,7 +36,11 @@ import {
   CODEX_FIXED_LOOKUP_DIRS,
   codexBinOption,
 } from "../bridge/bridge.mjs";
+import * as BridgeAll from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
+
+// Read by name so a build that does not export it fails the test, not the whole file.
+const endCodexTree = BridgeAll.endCodexTree;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE_CLAUDE = path.join(HERE, "fake-claude.mjs");
@@ -1554,16 +1558,17 @@ describe("HK1-04 ending a turn ends the whole process group", () => {
     }
   }, 30_000);
 
-  it("case (c): a grandchild in its own session survives the group signal (known gap, measured)", async (ctx) => {
+  it("case (c): a grandchild in its own session is ended by the descendant walk while it is still below the child (measured, HK2-01)", async (ctx) => {
     if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
-    // Spec: H-4 HK1-04 — measures case (c). A grandchild that starts its own session leaves the process group, so the group signal cannot reach it. This test pins that fact; a wider fix is out of scope and goes to Kai-Zen.
+    // Spec: H-4 HK1-04 case (c), measured again for HK2-01 A3. A grandchild that starts its own session leaves the process group, so the group signal cannot reach it.
+    // Round 2 measured: it is still a descendant by parent pid until it is reparented, so the descendant walk ends it. No code was widened for it.
     await startBridge({ opts: { codexIdleMs: 500, codexTurnMaxMs: 20000, killGraceMs: 400 } });
     const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS" }, 5000);
     expect(r.error).toEqual({ message: IDLE });
     const g = grandkids();
-    await delay(WAIT_AFTER_END_MS);
     try {
-      expect(alive(g.session)).toBe(true);
+      await until(() => !alive(g.session), WAIT_AFTER_END_MS);
+      expect(alive(g.session)).toBe(false);
     } finally {
       endByPid(g.session);
       endByPid(g.plain);
@@ -1579,3 +1584,238 @@ describe("HK1-04 ending a turn ends the whole process group", () => {
     expect(text).toContain("own session");
   });
 });
+
+describe("HK2-01 ending a turn ends every descendant, also one that left the process group", () => {
+  const WAIT_AFTER_END_MS = 10_000;
+  const grandkids = () => rows().find((row) => row.event === "grandkids");
+  const endByPid = (pid) => { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } };
+  /** The signal-0 answer: true only for ESRCH, so EPERM or any other answer does not pass as "gone". */
+  const esrch = (pid) => {
+    try { process.kill(pid, 0); return false; } catch (e) { return e?.code === "ESRCH"; }
+  };
+  const ownRows = (g) => [g.plain, g.background, g.session, g.setpgid];
+
+  /**
+   * Runs one turn-end cause and checks the setpgid helper.
+   * Before the end it proves the helper really left the stand-in's group (the known answer: without this the test could pass on a helper that never left).
+   */
+  async function setpgidIsGone(ctx, endTurn) {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
+    const g = await endTurn();
+    try {
+      expect(g.setpgid).toBeGreaterThan(0);
+      await until(() => esrch(g.setpgid), WAIT_AFTER_END_MS);
+      expect(esrch(g.setpgid)).toBe(true);
+    } finally {
+      for (const pid of ownRows(g)) if (pid) endByPid(pid);
+    }
+  }
+  /** Waits for the stand-in's grandkids row and proves from it (the helper wrote its own group id) that the helper left the stand-in's group and stayed in its session. */
+  async function seenLeaving() {
+    await until(() => grandkids()?.setpgid);
+    const g = grandkids();
+    expect(g.setpgidGroup).toBe(g.setpgid); // its own group
+    expect(g.setpgidGroup).not.toBe(g.pid); // not the stand-in's group (the stand-in leads its group, so its group id is its pid)
+    return g;
+  }
+
+  it("cause 1, a normal end: the setpgid child is gone by 10 s", async (ctx) => {
+    // Spec: HK2-01 cause 1 — normal end. kill -0 answers ESRCH for the helper that left the group.
+    await setpgidIsGone(ctx, async () => {
+      await startBridge({ opts: { killGraceMs: 400 } });
+      const r = await turn(secret, { engine: "codex", prompt: "GRANDKIDS-OK SETPGID" });
+      expect(r.error).toBeUndefined();
+      return seenLeaving();
+    });
+  }, 40_000);
+
+  it("cause 2, a stop from the page: the setpgid child is gone by 10 s", async (ctx) => {
+    // Spec: HK2-01 cause 2 — POST /v1/turn/cancel.
+    await setpgidIsGone(ctx, async () => {
+      await startBridge({ opts: { killGraceMs: 400 } });
+      const live = await openTurn(secret, { engine: "codex", prompt: "GRANDKIDS SETPGID" });
+      const g = await seenLeaving();
+      expect((await api(secret, "/v1/turn/cancel", { turnId: live.turnId })).json).toEqual({ cancelled: true });
+      await until(() => live.events.some((e) => e[0] === "error"));
+      return g;
+    });
+  }, 40_000);
+
+  it("cause 3, the page disconnects: the setpgid child is gone by 10 s", async (ctx) => {
+    // Spec: HK2-01 cause 3 — the page closes the stream mid-turn.
+    await setpgidIsGone(ctx, async () => {
+      await startBridge({ opts: { killGraceMs: 400 } });
+      const live = await openTurn(secret, { engine: "codex", prompt: "GRANDKIDS SETPGID" });
+      const g = await seenLeaving();
+      live.close();
+      return g;
+    });
+  }, 40_000);
+
+  it("cause 4, the idle limit: the setpgid child is gone by 10 s", async (ctx) => {
+    // Spec: HK2-01 cause 4 — no line from the child for codexIdleMs.
+    await setpgidIsGone(ctx, async () => {
+      await startBridge({ opts: { codexIdleMs: 500, codexTurnMaxMs: 20000, killGraceMs: 400 } });
+      const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS SETPGID" }, 5000);
+      expect(r.error).toEqual({ message: IDLE });
+      return seenLeaving();
+    });
+  }, 40_000);
+
+  it("cause 5, the overall limit: the setpgid child is gone by 10 s", async (ctx) => {
+    // Spec: HK2-01 cause 5 — the stand-in keeps sending lines (BEAT), so only codexTurnMaxMs can end the turn.
+    await setpgidIsGone(ctx, async () => {
+      await startBridge({ opts: { codexTurnMaxMs: 1500, killGraceMs: 400 } });
+      const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS BEAT SETPGID" }, 6000);
+      expect(r.error).toEqual({ message: IDLE });
+      return seenLeaving();
+    });
+  }, 40_000);
+
+  it("cause 6, the child exits first: the setpgid child is gone by 10 s", async (ctx) => {
+    // Spec: HK2-01 cause 6 — the stand-in ends itself 300 ms after it started its helpers, which then belong to init. Only what the turn saw before that can be ended.
+    await setpgidIsGone(ctx, async () => {
+      await startBridge({ opts: { killGraceMs: 400 } });
+      const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS-EXIT SETPGID" }, 5000);
+      expect(r.error?.message).toContain("Codex stopped without an answer");
+      return seenLeaving();
+    });
+  }, 40_000);
+
+  it("cause 7, the bridge closes mid-turn: the setpgid child is gone by 10 s", async (ctx) => {
+    // Spec: HK2-01 cause 7 — bridge.close() with a turn running.
+    await setpgidIsGone(ctx, async () => {
+      await startBridge({ opts: { killGraceMs: 400 } });
+      await openTurn(secret, { engine: "codex", prompt: "GRANDKIDS SETPGID" });
+      const g = await seenLeaving();
+      await bridge.close();
+      return g;
+    });
+  }, 40_000);
+
+  it("known answer: without the tree stop, the helper that left the group is still alive (the stand-in really escapes the group signal)", async (ctx) => {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
+    // Spec: HK2-01 — the same stand-in, a plain group signal as c91bc80b sent it. The helper survives it, so the cause tests above can go red.
+    await startBridge({ opts: { codexIdleMs: 20000, killGraceMs: 400 } });
+    const live = await openTurn(secret, { engine: "codex", prompt: "GRANDKIDS SETPGID" });
+    const g = await seenLeaving();
+    try {
+      process.kill(-g.pid, "SIGKILL");
+      await delay(500);
+      expect(esrch(g.plain)).toBe(true);
+      expect(esrch(g.setpgid)).toBe(false);
+    } finally {
+      live.close();
+      for (const pid of ownRows(g)) if (pid) endByPid(pid);
+    }
+  }, 40_000);
+
+  it("a session leader that was seen below the child before the child exited is ended too (measured)", async (ctx) => {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
+    // Spec: HK2-01 A3 — the child exits first and the setsid helper goes to init. It is in the turn's earlier looks, so it is still ended. A helper that went to init before the first look would not be (named residual).
+    await startBridge({ opts: { killGraceMs: 400 } });
+    const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS-EXIT SETPGID" }, 5000);
+    expect(r.error?.message).toContain("Codex stopped without an answer");
+    await until(() => grandkids()?.session);
+    const g = grandkids();
+    try {
+      await until(() => esrch(g.session), WAIT_AFTER_END_MS);
+      expect(esrch(g.session)).toBe(true);
+    } finally {
+      for (const pid of ownRows(g)) if (pid) endByPid(pid);
+    }
+  }, 40_000);
+});
+
+describe("HK2-01 endCodexTree guards", () => {
+  // Spec: HK2-01 A2 — the stop only signals the group and the pids in its own snapshot, and never a pid that must not be signalled.
+  // The stand-in is a recorder: a fake process table, a fake kill, and a fake clock-free wait (the grace is 60 ms). No real process is signalled.
+  const OWN_PID = 900;
+  const OWN_PGID = 800;
+  const row = (pid, ppid, start = "Fri Nov 27 15:00:00 2026") => ({ pid, ppid, start });
+  /** A fake machine: `alive` is the set of live pids; `stubborn` pids ignore SIGTERM. Records every call in order. */
+  function machine(alive, { stubborn = [], lists = [], esrchOnly = [] } = {}) {
+    const calls = [];
+    let listNo = 0;
+    return {
+      calls,
+      alive,
+      kill(pid, sig) {
+        calls.push({ pid, sig });
+        const target = Math.abs(pid);
+        if (esrchOnly.includes(target) || (sig === 0 && !alive.has(target))) {
+          throw Object.assign(new Error("kill ESRCH"), { code: "ESRCH" });
+        }
+        if (sig === "SIGTERM" && !stubborn.includes(target)) alive.delete(target);
+        if (sig === "SIGKILL") alive.delete(target);
+      },
+      async list() {
+        calls.push({ list: ++listNo });
+        return lists[Math.min(listNo - 1, lists.length - 1)] ?? [];
+      },
+    };
+  }
+  const run = (m, groupPid, seen = new Map(), childExited = false) =>
+    endCodexTree(groupPid, seen, 60, { kill: m.kill, list: m.list, ownPid: OWN_PID, ownPgid: OWN_PGID }, childExited);
+  const signalled = (m) => m.calls.filter((c) => "sig" in c && c.sig !== 0);
+  const tree = [row(500, 900), row(501, 500), row(502, 501), row(700, 1)];
+
+  it("takes the snapshot before any signal, then signals the group and each descendant of the child, and no one else", async () => {
+    const m = machine(new Set([500, 501, 502, 700]), { lists: [tree] });
+    const pids = await run(m, 500);
+    expect(m.calls.findIndex((c) => c.list === 1)).toBeLessThan(m.calls.findIndex((c) => c.sig === "SIGTERM"));
+    expect(signalled(m).map((c) => [c.pid, c.sig])).toEqual([[-500, "SIGTERM"], [501, "SIGTERM"], [502, "SIGTERM"]]);
+    expect(pids.sort()).toEqual([501, 502]);
+    expect(signalled(m).some((c) => Math.abs(c.pid) === 700)).toBe(false); // not in the snapshot
+  });
+
+  it("SIGKILL follows the grace, to the group and to each snapshot pid that is still the same process, SIGTERM first", async () => {
+    const m = machine(new Set([500, 501, 502]), { stubborn: [500, 501, 502], lists: [tree, tree] });
+    await run(m, 500);
+    const sent = signalled(m).map((c) => `${c.sig}:${c.pid}`);
+    expect(sent).toEqual(["SIGTERM:-500", "SIGTERM:501", "SIGTERM:502", "SIGKILL:-500", "SIGKILL:501", "SIGKILL:502"]);
+  });
+
+  it("a pid reused after the snapshot (another start time) gets no SIGKILL, and a descendant that starts after the snapshot gets no signal", async () => {
+    const reused = [row(500, 900), row(501, 1, "Fri Nov 27 15:05:00 2026"), row(502, 501), row(503, 500)];
+    const m = machine(new Set([500, 501, 502, 503]), { stubborn: [500, 501, 502, 503], lists: [tree, reused] });
+    await run(m, 500);
+    const kills = signalled(m).filter((c) => c.sig === "SIGKILL").map((c) => c.pid);
+    expect(kills).toEqual([-500, 502]);
+    expect(signalled(m).some((c) => Math.abs(c.pid) === 503)).toBe(false);
+  });
+
+  it("never signals pid 0, -0, pid 1, the bridge's own pid or its own group, even when the list or the group argument names them", async () => {
+    const hostile = [row(500, 900), row(0, 500), row(1, 500), row(OWN_PID, 500), row(OWN_PGID, 500), row(-5, 500), row(501, 500)];
+    const m = machine(new Set([500, 501]), { lists: [hostile] });
+    await run(m, 500);
+    for (const bad of [0, -0, 1, -1, OWN_PID, -OWN_PID, OWN_PGID, -OWN_PGID]) {
+      expect(m.calls.some((c) => "sig" in c && Object.is(c.pid, bad))).toBe(false);
+    }
+    expect(signalled(m).map((c) => c.pid)).toEqual([-500, 501]);
+    for (const group of [0, -0, 1, OWN_PID, OWN_PGID, Number.NaN, 2.5]) {
+      const m2 = machine(new Set([501]), { lists: [[row(501, group)]] });
+      await run(m2, group);
+      expect(m2.calls.filter((c) => "sig" in c && (Object.is(c.pid, 0) || Object.is(c.pid, -0) || Math.abs(c.pid) === OWN_PID || Math.abs(c.pid) === OWN_PGID || Math.abs(c.pid) === 1 || Number.isNaN(c.pid)))).toEqual([]);
+    }
+  });
+
+  it("a pid that is already gone (ESRCH) is not an error, and a list that cannot be read still signals the group and nothing else", async () => {
+    const gone = machine(new Set(), { lists: [tree], esrchOnly: [500, 501, 502] });
+    await expect(run(gone, 500)).resolves.toBeDefined();
+    const noList = machine(new Set([500, 501]), { lists: [] });
+    noList.list = async () => null;
+    await run(noList, 500);
+    expect(signalled(noList).map((c) => [c.pid, c.sig])).toEqual([[-500, "SIGTERM"]]);
+  });
+
+  it("a child that has exited: only what the turn saw earlier is ended, and a stranger that now holds the child's pid brings no children", async () => {
+    const seen = new Map([[501, row(501, 1)]]);
+    const stranger = [row(500, 1), row(600, 500), row(501, 1)];
+    const m = machine(new Set([501, 600]), { lists: [stranger] });
+    await run(m, 500, seen, true);
+    expect(signalled(m).map((c) => c.pid)).toEqual([-500, 501]);
+    expect(signalled(m).some((c) => Math.abs(c.pid) === 600)).toBe(false);
+  });
+});
+

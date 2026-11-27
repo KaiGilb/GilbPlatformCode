@@ -24,7 +24,7 @@
  * EARLYSHELL (a commandExecution item before the turn/start answer), COMPLETEDSHELL (that item only as
  * item/completed), UPDATEDSHELL (only as item/updated), NOANSWER (turn/completed with no agentMessage),
  * WIDE (the long answer), BIGLINE (the long line, then an answer the bridge must not show),
- * GRANDKIDS (starts three grandchildren: a plain one, one in the background through sh and nohup, and one in its own session; logs their pids; then waits, or with GRANDKIDS-OK answers, or with GRANDKIDS-EXIT ends itself 300 ms later and leaves them running),
+ * GRANDKIDS (starts three grandchildren: a plain one, one in the background through sh and nohup, and one in its own session; logs their pids; then waits, or with GRANDKIDS-OK answers, or with GRANDKIDS-EXIT ends itself 300 ms later and leaves them running; the word SETPGID adds a fourth helper in a new process group of the same session, and BEAT sends a status line every 40 ms),
  * TOOLTHENFAIL (one tool call, then a failed turn), ITEMS:<base64 JSON array of notifications> (written as given, then an answer), ACCTUPDATE (an account/updated notice with authMode FAKE_CODEX_ACCT_MODE, then an answer).
  */
 import fs from "node:fs";
@@ -267,7 +267,29 @@ async function runScenario(prompt, threadId, turnId) {
     const bg = spawnSync("sh", ["-c", 'nohup "$0" "$@" >/dev/null 2>&1 & echo $!', process.execPath, ...hold], { encoding: "utf8" });
     const session = spawn(process.execPath, hold, { stdio: "ignore", detached: true });
     session.unref();
-    log({ event: "grandkids", plain: plain.pid, background: Number(String(bg.stdout).trim()), session: session.pid });
+    // Guess: Codex's own bookkeeping git does this too. The word SETPGID adds a helper that moves into a NEW process group but stays in the SAME session (perl setpgrp). It is not setsid.
+    // The helper prints its own group id once it has moved, and this process waits for that line (at most 3 s), so the row below proves the move before the turn can end.
+    let setpgid;
+    let setpgidGroup = null;
+    if (prompt.includes("SETPGID")) {
+      setpgid = spawn("perl", ["-e", "setpgrp(0,0); $|=1; print getpgrp(0), qq(\\n); sleep 90"], { stdio: ["ignore", "pipe", "ignore"] });
+      setpgid.on("error", () => {});
+      setpgidGroup = await new Promise((resolve) => {
+        const t = setTimeout(() => resolve(null), 3000);
+        setpgid.stdout.once("data", (d) => { clearTimeout(t); resolve(Number(String(d).trim()) || null); });
+        setpgid.on("close", () => { clearTimeout(t); resolve(null); });
+      });
+      setpgid.stdout.destroy();
+      setpgid.unref();
+    }
+    log({ event: "grandkids", plain: plain.pid, background: Number(String(bg.stdout).trim()), session: session.pid, ...(setpgid ? { setpgid: setpgid.pid, setpgidGroup } : {}) });
+    // Guess: a status line now and then, so the idle limit does not fire and only the overall limit can end the turn.
+    if (prompt.includes("BEAT")) {
+      const beat = setInterval(() => {
+        try { note("thread/status/changed", { threadId, status: "idle" }); } catch { /* the pipe is already closed */ }
+      }, 40);
+      beat.unref();
+    }
     if (prompt.includes("GRANDKIDS-OK")) finishTurn(threadId, turnId, "grandkids-done", "final_answer");
     // Guess: Codex ends on its own while its helpers still run. The short wait lets the bridge see the grandkids row first.
     if (prompt.includes("GRANDKIDS-EXIT")) setTimeout(() => process.exit(0), 300);
