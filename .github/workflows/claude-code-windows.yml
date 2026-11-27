@@ -98,3 +98,25 @@ jobs:
       - run: npm test
       - name: End to end (same script, stand-in claude by path)
         run: npm run test:windows-e2e
+
+  # Batch F diagnostic: removed before merge. X6: the SU-5a M1b test 40 times on Windows Node 20 with child timings.
+  m1b-loop:
+    runs-on: windows-latest
+    steps:
+      - name: Keep LF line ends
+        working-directory: .
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Batch F diagnostic - M1b x40
+        shell: bash
+        run: |
+          fails=0
+          for i in $(seq 1 40); do
+            echo "=== M1B RUN $i"
+            npx vitest run src/selfupdate.route.test.mjs -t "M1b" || fails=$((fails+1))
+          done
+          echo "M1B FAILS: $fails of 40"

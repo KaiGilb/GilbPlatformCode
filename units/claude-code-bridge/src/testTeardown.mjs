@@ -128,6 +128,9 @@ async function waitForExit(pids) {
  */
 export async function removeTestDir(dir, logPaths) {
   const pids = collectPids(dir, logPaths);
+  const __t = Date.now(); // Batch F diagnostic: removed before merge
+  console.error(`[SU5A] ${new Date().toISOString()} removeTestDir starts pids=[${[...pids].join(",")}]`);
   if (pids.size > 0) await waitForExit(pids);
+  console.error(`[SU5A] ${new Date().toISOString()} removeTestDir waited ${Date.now() - __t} ms; alive=[${[...pids].filter((p) => pidAlive(p)).join(",")}]`); // Batch F diagnostic: removed before merge
   if (typeof dir === "string" && dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }
