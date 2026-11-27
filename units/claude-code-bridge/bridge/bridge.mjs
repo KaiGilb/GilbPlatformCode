@@ -1549,7 +1549,11 @@ export function codeTurnSettings(home, platform, extraDenyRead = [], approval = 
             failIfUnavailable: true,
             allowUnsandboxedCommands: false,
             autoAllowBashIfSandboxed: approval !== "each-write", // each-write: every command asks too, because a command can write
-            network: { allowedDomains: ["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org", "codeload.github.com", "raw.githubusercontent.com"] },
+            network: {
+                // a project's own tests start a local server; binding a local port does not widen outbound reach or the folder rules.
+                allowLocalBinding: true,
+                allowedDomains: ["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org", "codeload.github.com", "raw.githubusercontent.com"],
+            },
             filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir)] },
         },
         permissions: {
@@ -1842,7 +1846,11 @@ export function computerSandboxSettings(home, folder, places, tmpDirs = [], extr
             failIfUnavailable: true,
             allowUnsandboxedCommands: false,
             autoAllowBashIfSandboxed: true,
-            network: { allowedDomains: ["*"] },
+            network: {
+                // a project's own tests start a local server; binding a local port does not widen outbound reach or the folder rules.
+                allowLocalBinding: true,
+                allowedDomains: ["*"],
+            },
             filesystem: {
                 allowWrite: withReal(writableAreas(home, folder, tmpDirs)),
                 denyWrite: [...deny, ...withReal([...writeOnlyPlaces(home), ...extraWriteDeny])],
