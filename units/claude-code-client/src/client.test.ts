@@ -141,6 +141,46 @@ describe("sendClaudeCodeTurn", () => {
     standing: { outcome: "loaded", group: "G", vault: "V", textSent: true },
   };
 
+  describe("UX-3c", () => {
+    const CMD = "node ~/.gilb-claude-code-bridge.mjs";
+    const claudeWith = `The Claude Code bridge is not reachable on this computer. Start it in Terminal with: ${CMD}`;
+    const claudeWithout = "The Claude Code bridge is not reachable on this computer. Start it with the command shown under Connect > Claude Code.";
+    const codexWith = `Codex cannot be reached: the bridge is not running on this computer. Start it in Terminal with: ${CMD}`;
+    const codexWithout = "Codex cannot be reached: the bridge is not running on this computer.";
+    const unreachable = (startCommand?: string) => {
+      client = mk(startCommand === undefined ? {} : { startCommand });
+      client.save("s3cret");
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url === AI_CLAUDE_CODE_CONTEXT_URL) return json(200, CONTEXT);
+        throw new TypeError("Failed to fetch");
+      });
+    };
+
+    it("a Codex turn with a command names Codex and the command", async () => {
+      // Spec: Chat.CodexConnect UX-3c — a Codex turn that cannot reach the bridge names Codex and the start command (meter: the thrown message equals that sentence)
+      unreachable(CMD);
+      await expect(client.sendTurn([{ role: "user", content: "hi" }], { thread: "t", engine: "codex" })).rejects.toMatchObject({ status: 0, message: codexWith });
+    });
+
+    it("a Codex turn without a command is the first sentence alone", async () => {
+      // Spec: Chat.CodexConnect UX-3c — a Codex turn with no start command stops after the first sentence (meter: the thrown message equals that sentence)
+      unreachable();
+      await expect(client.sendTurn([{ role: "user", content: "hi" }], { thread: "t", engine: "codex" })).rejects.toMatchObject({ status: 0, message: codexWithout });
+    });
+
+    it("a Claude turn with a command keeps today's sentence", async () => {
+      // Spec: Chat.CodexConnect UX-3c — a Claude turn keeps the bridge sentence, byte for byte, including the command (meter: the thrown message equals that sentence)
+      unreachable(CMD);
+      await expect(client.sendTurn([{ role: "user", content: "hi" }], { thread: "t", engine: "claude" })).rejects.toMatchObject({ status: 0, message: claudeWith });
+    });
+
+    it("a Claude turn without a command keeps today's sentence", async () => {
+      // Spec: Chat.CodexConnect UX-3c — a Claude turn with no start command keeps the Connect sentence, byte for byte (meter: the thrown message equals that sentence)
+      unreachable();
+      await expect(client.sendTurn([{ role: "user", content: "hi" }], { thread: "t" })).rejects.toMatchObject({ status: 0, message: claudeWithout });
+    });
+  });
+
   it("composes on GilbPlatform, runs on the bridge, runs each vault tool on GilbPlatform with DPoP, and answers", async () => {
     client.save("s3cret");
     const calls: { url: string; init: RequestInit }[] = [];

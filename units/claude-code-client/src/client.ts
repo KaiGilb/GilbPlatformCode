@@ -123,7 +123,10 @@ export interface ClaudeCodeReply {
   role: "assistant";
   content: string;
   model: string;
-  payer: "person-claude-code";
+  /** Who pays: the person's Claude subscription, or their ChatGPT subscription when the turn ran on Codex. */
+  payer: "person-claude-code" | "person-codex";
+  /** Set only when the turn ran on Codex. A Claude turn leaves it out, so an older reader sees the same reply. */
+  engine?: "codex";
   /** True when the turn ended because its tool rounds were used up. Absent otherwise. The page sends {@link BUDGET_SPENT_CONTINUE} to go on. */
   budgetSpent?: boolean;
   /** Code mode only: "files-only" when the turn could not run commands (Windows). Absent for a full code turn and for chat. */
@@ -132,8 +135,8 @@ export interface ClaudeCodeReply {
   access?: "computer";
   /** Code turn only: the project the turn ran in. Absent for a turn in the code folder itself and for chat. */
   project?: string;
-  /** The effort the turn ran with, when one was asked for (bridge 0.3.5). */
-  effort?: Effort;
+  /** The effort the turn ran with, when one was asked for (bridge 0.3.5). A Codex turn may also name {@link CodexEffort}. */
+  effort?: Effort | CodexEffort;
   /** Code turn only (bridge 0.3.5): whether the turn was set to hand coding jobs to the sonnet-coder subagent. */
   delegateCoding?: boolean;
   /** Token use for this turn (bridge 0.3.7). Absent on an older bridge, or when the bridge sent no valid context window. */
@@ -178,6 +181,56 @@ export const MODEL_ALIASES = ["opus", "sonnet", "haiku", "fable"] as const;
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type Effort = (typeof EFFORTS)[number];
 const FULL_MODEL = /^claude-[a-z0-9][a-z0-9.-]{0,62}$/;
+
+/** Which engine a turn runs on. Leaving it out means Claude Code. */
+export type BridgeEngineId = "claude" | "codex";
+
+/**
+ * Efforts a Codex turn may name. Claude's {@link EFFORTS} is a separate list and does not include `ultra`.
+ * Spec: Chat.CodexConnect.PagePart.Units — Codex efforts.
+ */
+export const CODEX_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"] as const;
+/** One effort from {@link CODEX_EFFORTS}. */
+export type CodexEffort = (typeof CODEX_EFFORTS)[number];
+/** A Codex model id: a short lowercase name, and not a Claude model id. */
+const CODEX_MODEL = /^[a-z0-9][a-z0-9.-]{0,62}$/;
+
+/** One model in a hello `engines` entry. `default` and `efforts` are set on Codex models; Claude models carry id and label. */
+export interface BridgeEngineModel {
+  id: string;
+  label: string;
+  default?: boolean;
+  efforts?: string[];
+}
+
+/**
+ * One entry of `engines` on a paired `GET /v1/hello` (bridge 0.4.0).
+ * Claude is ready, with code turns, pictures and delegateCoding. Codex adds install, version, account and a reason when it is not ready.
+ * Spec: Chat.CodexConnect.PagePart.Units — hello engines.
+ */
+export interface BridgeEngine {
+  id: BridgeEngineId;
+  name: string;
+  ready: boolean;
+  billing: "claude-subscription" | "chatgpt-subscription";
+  models: BridgeEngineModel[];
+  efforts: string[];
+  codeTurns: boolean;
+  images: boolean;
+  delegateCoding: boolean;
+  /** Codex only: the `codex` command was found. */
+  installed?: boolean;
+  /** Codex only: the version read from Codex, or null when there is none. */
+  version?: string | null;
+  /** Codex only: this bridge can drive that version. */
+  supported?: boolean;
+  /** Codex only: the sign-in Codex reported. */
+  account?: "chatgpt" | "apiKey" | "none" | "other" | "unknown";
+  /** Codex only: a probe is still running, so `ready` may change. */
+  checking?: true;
+  /** Codex only: one sentence when Codex is not ready. */
+  reason?: string;
+}
 /** What the bridge's `/v1/hello` says the page may choose from (bridge 0.3.5). Absent on an older bridge. */
 export interface BridgeOptions {
   models: string[];
@@ -389,8 +442,10 @@ export interface SendClaudeCodeOpts {
   /**
    * Told, for the turn and for each hand-off's nested turn, what the CLI itself says it runs with. `apiKeySource` is
    * "none" on a subscription; the bridge stops any run that says otherwise.
+   * A Codex status adds `engine: "codex"` and `account`, and `apiKeySource` is null (Codex has no Claude credential).
+   * A Claude status is exactly these three fields, with no `engine` and no `account`.
    */
-  onBridgeStatus?: (status: { nested: boolean; apiKeySource: string | null; model: string }) => void;
+  onBridgeStatus?: (status: { nested: boolean; apiKeySource: string | null; model: string; engine?: BridgeEngineId; account?: string }) => void;
   /**
    * "code" runs the turn in the folder the bridge was started with (`--workspace`): Claude Code may read, edit and run commands there.
    * Default "chat" (no tools). A hand-off's nested turn is always a chat turn.
@@ -411,8 +466,17 @@ export interface SendClaudeCodeOpts {
    * Chat and code turns. Anything else throws a ClaudeCodeBridgeError (400, "That model is not allowed.") before any request. A hand-off inherits it.
    */
   model?: string;
-  /** The effort the person chose (bridge 0.3.5): `low`, `medium`, `high`, `xhigh` or `max`. Anything else throws (400, "That effort is not allowed."). A hand-off inherits it. */
-  effort?: Effort;
+  /**
+   * The effort the person chose (bridge 0.3.5): `low`, `medium`, `high`, `xhigh` or `max` for Claude, and also `ultra` for Codex.
+   * Anything else throws (400, "That effort is not allowed."). A hand-off inherits it.
+   */
+  effort?: Effort | CodexEffort;
+  /**
+   * Which engine runs this turn (bridge 0.4.0). Default `"claude"`. A Claude turn sends no `engine` key, so an older bridge sees today's body.
+   * Anything other than `"claude"` or `"codex"` throws (400, "That engine is not known.") before any request.
+   * Spec: Chat.CodexConnect.PagePart.Units — the turn's engine.
+   */
+  engine?: BridgeEngineId;
   /**
    * Code turns only (bridge 0.3.5): the model hands coding jobs to a Sonnet subagent and checks its work. With mode "chat" this throws
    * (400, "delegateCoding is only for code turns.") before any request.
@@ -472,7 +536,7 @@ export interface ClaudeCodeClient {
   /** True when a bridge answers on this computer. Does not need the secret. */
   probe(): Promise<boolean>;
   /** The same check as probe(), plus the build `/v1/hello` reports. An older bridge sends none, so `build` is null. */
-  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null; access: "folder" | "computer" | null; options?: BridgeOptions; update?: BridgeUpdateInfo; openFolder?: true; accessChangeable?: true; accessSource?: "flag" | "file" | "default"; accessSaveFailed?: true }>;
+  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null; access: "folder" | "computer" | null; options?: BridgeOptions; update?: BridgeUpdateInfo; openFolder?: true; accessChangeable?: true; accessSource?: "flag" | "file" | "default"; accessSaveFailed?: true; engines?: BridgeEngine[] }>;
   /**
    * Updates the bridge from the app (`POST /v1/update`, bridge 0.3.16; needs the pairing; goes through the relay when open).
    * `{ check: true }` only asks: `{ check, current, latest, available }`. Otherwise the bridge downloads, checks our signature and
@@ -575,7 +639,7 @@ interface BridgeTurnOut {
   codeMode?: "files-only";
   access?: "computer";
   project?: string;
-  effort?: Effort;
+  effort?: Effort | CodexEffort;
   delegateCoding?: boolean;
   usage?: TurnUsage;
 }
@@ -704,6 +768,100 @@ function defaultErrorText(status: number, body: unknown, fallback: string): stri
   return `${fallback} (HTTP ${status}).`;
 }
 
+const ENGINE_NAME_MAX = 40;
+const ENGINE_REASON_MAX = 300;
+const ENGINE_VERSION_MAX = 20;
+const ENGINE_LABEL_MAX = 60;
+const ENGINE_MODELS_MAX = 50;
+const CODEX_ACCOUNTS = ["chatgpt", "apiKey", "none", "other", "unknown"] as const;
+
+/** A string within the bound, or null when it is missing or too long. A too-long string drops the whole entry. */
+function boundedText(v: unknown, max: number): string | null {
+  if (typeof v !== "string" || v.length > max) return null;
+  return v;
+}
+
+/**
+ * One hello `engines` entry, or null when it is malformed.
+ * A bad id, a model id off that engine's rule, more than 50 models, an effort off the list, or a string over its bound drops the entry.
+ * Spec: Chat.CodexConnect.PagePart.Units — keep only a well-formed engine entry.
+ */
+function readEngineEntry(raw: unknown): BridgeEngine | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  if (o.id !== "claude" && o.id !== "codex") return null;
+  const name = boundedText(o.name, ENGINE_NAME_MAX);
+  if (name === null || typeof o.ready !== "boolean") return null;
+  if (typeof o.codeTurns !== "boolean" || typeof o.images !== "boolean" || typeof o.delegateCoding !== "boolean") return null;
+  const codex = o.id === "codex";
+  if (o.billing !== (codex ? "chatgpt-subscription" : "claude-subscription")) return null;
+  const effortOk = (e: string) => (codex ? (CODEX_EFFORTS as readonly string[]) : (EFFORTS as readonly string[])).includes(e);
+  const idOk = (id: string) => (codex ? CODEX_MODEL.test(id) && !id.startsWith("claude-") : (MODEL_ALIASES as readonly string[]).includes(id) || FULL_MODEL.test(id));
+  if (!Array.isArray(o.models) || o.models.length > ENGINE_MODELS_MAX || !Array.isArray(o.efforts)) return null;
+  const models: BridgeEngineModel[] = [];
+  for (const item of o.models) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+    const m = item as Record<string, unknown>;
+    if (typeof m.id !== "string" || !idOk(m.id)) return null;
+    const label = boundedText(m.label, ENGINE_LABEL_MAX);
+    if (label === null) return null;
+    const model: BridgeEngineModel = { id: m.id, label };
+    if (m.default !== undefined) {
+      if (typeof m.default !== "boolean") return null;
+      model.default = m.default;
+    }
+    if (m.efforts !== undefined) {
+      if (!Array.isArray(m.efforts) || m.efforts.some((e) => typeof e !== "string" || !effortOk(e))) return null;
+      model.efforts = m.efforts as string[];
+    }
+    models.push(model);
+  }
+  if (o.efforts.some((e) => typeof e !== "string" || !effortOk(e))) return null;
+  if (o.reason !== undefined && boundedText(o.reason, ENGINE_REASON_MAX) === null) return null;
+  if (o.checking !== undefined && o.checking !== true) return null;
+  const shared = {
+    name,
+    ready: o.ready,
+    models,
+    efforts: o.efforts as string[],
+    codeTurns: o.codeTurns,
+    images: o.images,
+    delegateCoding: o.delegateCoding,
+    ...(o.checking === true ? { checking: true as const } : {}),
+    ...(typeof o.reason === "string" ? { reason: o.reason } : {}),
+  };
+  if (!codex) return { id: "claude", billing: "claude-subscription", ...shared };
+  if (typeof o.installed !== "boolean" || typeof o.supported !== "boolean") return null;
+  if (!(o.version === null || boundedText(o.version, ENGINE_VERSION_MAX) !== null)) return null;
+  if (typeof o.account !== "string" || !(CODEX_ACCOUNTS as readonly string[]).includes(o.account)) return null;
+  return {
+    id: "codex",
+    billing: "chatgpt-subscription",
+    installed: o.installed,
+    version: o.version as string | null,
+    supported: o.supported,
+    account: o.account as BridgeEngine["account"],
+    ...shared,
+  };
+}
+
+/**
+ * The hello's `engines`, or undefined when the hello has no array (an older bridge, or an unpaired hello).
+ * One entry per id, first valid one wins. Never throws.
+ */
+function readEngines(raw: unknown): BridgeEngine[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: BridgeEngine[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const entry = readEngineEntry(item);
+    if (!entry || seen.has(entry.id)) continue;
+    seen.add(entry.id);
+    out.push(entry);
+  }
+  return out;
+}
+
 /**
  * Builds the page-side client for ONE signed-in principal. Make a new one when the principal changes.
  *
@@ -742,8 +900,14 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
   const storageKey = `${ns}.claude-code-bridge.${principal}`;
   const sessionPrefix = `${ns}.claude-code-session.${principal}.`;
 
-  const notRunning = () => {
+  // A Codex turn names Codex. Every other call, including a Claude turn, keeps the bridge sentence byte for byte.
+  const notRunning = (engine?: "codex") => {
     const cmd = typeof config.startCommand === "function" ? config.startCommand() : config.startCommand;
+    if (engine === "codex") {
+      return cmd
+        ? `Codex cannot be reached: the bridge is not running on this computer. Start it in Terminal with: ${cmd}`
+        : "Codex cannot be reached: the bridge is not running on this computer.";
+    }
     return cmd
       ? `The Claude Code bridge is not reachable on this computer. Start it in Terminal with: ${cmd}`
       : "The Claude Code bridge is not reachable on this computer. Start it with the command shown under Connect > Claude Code.";
@@ -766,6 +930,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     onEnd(): void;
     onRes(status: number, contentType: string, body: string): void;
     fail(err: Error): void;
+    /** The sentence for a bridge that cannot be reached. A Codex turn names Codex; every other request keeps the bridge sentence. */
+    unreachable(): string;
   }
   let relayWindow: Window | null = null;
   let relayStateNow: RelayState = "closed";
@@ -841,12 +1007,12 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       const h = m.headers && typeof m.headers === "object" ? (m.headers as Record<string, unknown>) : {};
       r.onRes(Number(m.status), typeof h["content-type"] === "string" ? h["content-type"] : "", typeof m.body === "string" ? m.body : "");
     } else if (m.type === "gilb-bridge-err") {
-      r.fail(m.message === "aborted" ? new DOMException("aborted", "AbortError") : new ClaudeCodeBridgeError(0, notRunning()));
+      r.fail(m.message === "aborted" ? new DOMException("aborted", "AbortError") : new ClaudeCodeBridgeError(0, r.unreachable()));
     }
   }
 
   /** One request through the relay window. Resolves at the head with a Response whose body is fed by the window's messages. */
-  function relayRequest(path: string, init: RequestInit, headTimeoutMs: number = RELAY_HEAD_TIMEOUT_MS): Promise<Response> {
+  function relayRequest(path: string, init: RequestInit, headTimeoutMs: number = RELAY_HEAD_TIMEOUT_MS, engine?: "codex"): Promise<Response> {
     const signal = init.signal ?? undefined;
     if (signal?.aborted) return Promise.reject(new DOMException("aborted", "AbortError"));
     const headers: Record<string, string> = {};
@@ -884,7 +1050,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       };
       const headTimer = setTimeout(() => {
         abortRemote();
-        fail(new ClaudeCodeBridgeError(0, notRunning()));
+        fail(new ClaudeCodeBridgeError(0, notRunning(engine)));
       }, headTimeoutMs);
       signal?.addEventListener("abort", onAbort, { once: true });
       const stream = new ReadableStream<Uint8Array>({
@@ -907,7 +1073,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
             headSeen = true;
             if (nullBody) controller?.close();
           } catch {
-            fail(new ClaudeCodeBridgeError(0, notRunning()));
+            fail(new ClaudeCodeBridgeError(0, notRunning(engine)));
           }
         },
         onChunk(text) {
@@ -938,6 +1104,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           }
         },
         fail,
+        unreachable: () => notRunning(engine),
       });
       postRelay({ type: "gilb-bridge-req", id, path, method: init.method ?? "GET", headers, ...(typeof init.body === "string" ? { body: init.body } : {}) });
     });
@@ -947,18 +1114,18 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
    * THE one way to reach the bridge. The relay window open: the request goes through it, never also direct. Otherwise it is a
    * direct fetch. `keepalive` has no meaning through the relay (the window sends it), so it is dropped there.
    */
-  function bridgeRequest(path: string, init: RequestInit, headTimeoutMs?: number): Promise<Response> {
-    if (relayStateNow === "open" && relayWindow !== null) return relayRequest(path, init, headTimeoutMs);
+  function bridgeRequest(path: string, init: RequestInit, headTimeoutMs?: number, engine?: "codex"): Promise<Response> {
+    if (relayStateNow === "open" && relayWindow !== null) return relayRequest(path, init, headTimeoutMs, engine);
     return fetch(`${bridgeUrl}${path}`, init);
   }
 
-  async function bridgeFetch(path: string, init: RequestInit, headTimeoutMs?: number): Promise<Response> {
+  async function bridgeFetch(path: string, init: RequestInit, headTimeoutMs?: number, engine?: "codex"): Promise<Response> {
     try {
-      return await bridgeRequest(path, init, headTimeoutMs);
+      return await bridgeRequest(path, init, headTimeoutMs, engine);
     } catch (e) {
       if (init.signal?.aborted) throw new ClaudeCodeBridgeError(499, DISCONNECTED);
       if (e instanceof ClaudeCodeBridgeError) throw e;
-      throw new ClaudeCodeBridgeError(0, notRunning());
+      throw new ClaudeCodeBridgeError(0, notRunning(engine));
     }
   }
 
@@ -993,11 +1160,26 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     const last = messages[messages.length - 1];
     if (!last || last.role !== "user") throw new ClaudeCodePlatformError(400, "Write a message first.");
     // The person's choices are checked before anything goes out (the bridge checks them again).
-    if (opts.model !== undefined && !(typeof opts.model === "string" && ((MODEL_ALIASES as readonly string[]).includes(opts.model) || FULL_MODEL.test(opts.model)))) throw new ClaudeCodeBridgeError(400, "That model is not allowed.");
-    if (opts.effort !== undefined && !(typeof opts.effort === "string" && (EFFORTS as readonly string[]).includes(opts.effort))) throw new ClaudeCodeBridgeError(400, "That effort is not allowed.");
-    if (opts.delegateCoding !== undefined && typeof opts.delegateCoding !== "boolean") throw new ClaudeCodeBridgeError(400, "delegateCoding must be true or false.");
-    if (opts.delegateCoding === true && opts.mode !== "code") throw new ClaudeCodeBridgeError(400, "delegateCoding is only for code turns.");
-    checkImages(opts.images);
+    // Absent means Claude, and that path is the checks this client has always made.
+    // Spec: Chat.CodexConnect.PagePart.Units — refuse a Codex turn the bridge would refuse, before any request.
+    // Read as unknown: a page can pass a value the type forbids, and that must be refused here, not sent.
+    const asked = (opts as { engine?: unknown }).engine;
+    if (asked !== undefined && asked !== "claude" && asked !== "codex") throw new ClaudeCodeBridgeError(400, "That engine is not known.");
+    const engine: BridgeEngineId = asked === "codex" ? "codex" : "claude";
+    if (engine === "codex") {
+      if (opts.model !== undefined && !(typeof opts.model === "string" && CODEX_MODEL.test(opts.model) && !opts.model.startsWith("claude-"))) throw new ClaudeCodeBridgeError(400, "That model is not allowed.");
+      if (opts.effort !== undefined && !(typeof opts.effort === "string" && (CODEX_EFFORTS as readonly string[]).includes(opts.effort))) throw new ClaudeCodeBridgeError(400, "That effort is not allowed.");
+      if (opts.delegateCoding !== undefined && typeof opts.delegateCoding !== "boolean") throw new ClaudeCodeBridgeError(400, "delegateCoding must be true or false.");
+      if (opts.mode === "code") throw new ClaudeCodeBridgeError(400, "Codex cannot run code turns yet.");
+      if (opts.images !== undefined && (!Array.isArray(opts.images) || opts.images.length > 0)) throw new ClaudeCodeBridgeError(400, "Codex cannot take pictures yet.");
+      if (opts.delegateCoding === true) throw new ClaudeCodeBridgeError(400, "delegateCoding is only for Claude Code.");
+    } else {
+      if (opts.model !== undefined && !(typeof opts.model === "string" && ((MODEL_ALIASES as readonly string[]).includes(opts.model) || FULL_MODEL.test(opts.model)))) throw new ClaudeCodeBridgeError(400, "That model is not allowed.");
+      if (opts.effort !== undefined && !(typeof opts.effort === "string" && (EFFORTS as readonly string[]).includes(opts.effort))) throw new ClaudeCodeBridgeError(400, "That effort is not allowed.");
+      if (opts.delegateCoding !== undefined && typeof opts.delegateCoding !== "boolean") throw new ClaudeCodeBridgeError(400, "delegateCoding must be true or false.");
+      if (opts.delegateCoding === true && opts.mode !== "code") throw new ClaudeCodeBridgeError(400, "delegateCoding is only for code turns.");
+      checkImages(opts.images);
+    }
     const conn = client.load();
     if (!conn) throw new ClaudeCodeBridgeError(401, "Claude Code is not connected. Press Connect.");
 
@@ -1029,15 +1211,17 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       body: Record<string, unknown>,
       onTool: (name: string, args: string, bridgeTurnId: string, sig: AbortSignal, callId: string) => Promise<{ result: string; isError: boolean }>,
       announceStart: boolean,
-      onStatus?: (data: { apiKeySource: string | null; model: string }) => void,
+      onStatus?: (data: { apiKeySource: string | null; model: string; engine?: "codex"; account?: string }) => void,
       turnSignal: AbortSignal = signal,
     ): Promise<BridgeTurnOut> {
+      // The same words for the turn, its tool answers and its hand-off: a Codex turn stays a Codex turn.
+      const unreachable = engine === "codex" ? "codex" as const : undefined;
       const res = await bridgeFetch("/v1/turn", {
         signal: turnSignal,
         method: "POST",
         headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
         body: JSON.stringify(body),
-      });
+      }, undefined, unreachable);
       if (res.status === 401) throw bridgeForgotUs();
       if (!res.ok) {
         const err = (await res.json().catch(() => null)) as { error?: unknown; code?: unknown; project?: unknown; ownTurn?: unknown; turnId?: unknown; startedAt?: unknown } | null;
@@ -1104,7 +1288,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 method: "POST",
                 headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
                 body: JSON.stringify({ turnId: forTurn, id, result: answer.result, isError: answer.isError }),
-              });
+              }, undefined, unreachable);
               // The bridge did not take the answer (restarted, disconnected, or the turn is gone): it would wait for it
               // for 15 minutes. Stop here instead; leaving the stream (see readBridgeSse) ends the turn on the bridge.
               if (back.status === 401) throw bridgeForgotUs();
@@ -1160,7 +1344,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 method: "POST",
                 headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
                 body: JSON.stringify({ turnId, id: req.id, allow, ...(allow && scope ? { scope } : {}) }),
-              });
+              }, undefined, unreachable);
               if (back.status === 401) throw bridgeForgotUs();
               // 404 or 409: the question timed out or was answered already; nothing more to do.
             } catch (err) {
@@ -1180,7 +1364,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 method: "POST",
                 headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
                 body: JSON.stringify({ turnId, id, allow: false }),
-              });
+              }, undefined, unreachable);
               if (back.status === 401) throw bridgeForgotUs();
             } catch (err) {
               if (!stop.signal.aborted) failTurn(err);
@@ -1203,7 +1387,11 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
             turnId = typeof data.turnId === "string" ? data.turnId : "";
             if (announceStart) opts.onEvent?.({ event: "start", data: { ok: true } });
           } else if (ev.event === "status") {
-            onStatus?.({ apiKeySource: typeof data.apiKeySource === "string" ? data.apiKeySource : null, model: typeof data.model === "string" ? data.model : "" });
+            const model = typeof data.model === "string" ? data.model : "";
+            // Codex names its engine and the ChatGPT account. Claude keeps the object it has always sent: no new keys.
+            // Spec: Chat.CodexConnect.PagePart.Units — onBridgeStatus per engine.
+            if (data.engine === "codex") onStatus?.({ apiKeySource: null, model, engine: "codex", account: typeof data.account === "string" ? data.account : "" });
+            else onStatus?.({ apiKeySource: typeof data.apiKeySource === "string" ? data.apiKeySource : null, model });
           } else if (ev.event === "tool_request") {
             handle(String(data.id ?? ""), String(data.name ?? "tool"), typeof data.arguments === "string" ? data.arguments : "{}", turnId);
           } else if (ev.event === "tool_cancelled") {
@@ -1227,13 +1415,14 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 ...(data.codeMode === "files-only" ? { codeMode: "files-only" as const } : {}),
                 ...(data.access === "computer" ? { access: "computer" as const } : {}),
                 ...(typeof data.project === "string" && data.project ? { project: data.project } : {}),
-                ...(typeof data.effort === "string" && (EFFORTS as readonly string[]).includes(data.effort) ? { effort: data.effort as Effort } : {}),
+                ...(typeof data.effort === "string" && (engine === "codex" ? (CODEX_EFFORTS as readonly string[]) : (EFFORTS as readonly string[])).includes(data.effort) ? { effort: data.effort as Effort | CodexEffort } : {}),
                 ...(typeof data.delegateCoding === "boolean" ? { delegateCoding: data.delegateCoding } : {}),
                 ...(usage ? { usage } : {}),
               };
             }
           } else if (ev.event === "error") {
-            streamError = typeof data.message === "string" ? data.message : "Claude Code could not answer.";
+            // The bridge's own sentence is kept. Only the fallback names the engine: the connection texts stay about the bridge.
+            streamError = typeof data.message === "string" ? data.message : `${engine === "codex" ? "Codex" : "Claude Code"} could not answer.`;
           } else if (!announceStart && (ev.event === "activity" || ev.event === "tool_error")) {
             // A hand-off's nested turn: its activity is passed on, marked as the hand-off's.
             const ce = codeStreamEvent(ev.event, data);
@@ -1263,7 +1452,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       if (turnSignal.aborted) throw new ClaudeCodeBridgeError(499, DISCONNECTED);
       if (readErr) throw readErr;
       if (streamError) throw new ClaudeCodeBridgeError(502, streamError);
-      if (!out) throw new ClaudeCodeBridgeError(502, "Claude Code returned no answer.");
+      if (!out) throw new ClaudeCodeBridgeError(502, `${engine === "codex" ? "Codex" : "Claude Code"} returned no answer.`);
       // The person's turn also picks up a hand-off, or a platform tool answer, that spent the budget.
       if (spent || (announceStart && turnBudgetSpent)) out.budgetSpent = true;
       return out;
@@ -1359,6 +1548,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         return { result: JSON.stringify({ error: "The hand-off could not be linked to its turn.", next: HAND_OFF_FAILED_NEXT }), isError: true };
       }
       try {
+        // No engine key: the bridge runs a hand-off on its parent's engine, and refuses one that names a different engine.
+        // Spec: Chat.CodexConnect.PagePart.Units — a hand-off stays on its turn's engine.
         const nestedBody: Record<string, unknown> = { prompt: hop.task, system: hop.system, tools: hop.tools, parentTurnId };
         if (typeof callId === "string" && callId !== "") nestedBody.parentCallId = callId;
         const done = await streamBridgeTurn(
@@ -1389,7 +1580,13 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     const codeMode = opts.mode === "code";
     const project = codeMode && typeof opts.project === "string" && opts.project ? opts.project : "";
     // Each component is encoded, so project "alpha" with thread "notes" can never be the key of no project with thread "alpha/notes".
-    const skey = codeMode ? `${sessionPrefix}mode-code/${project ? `${encodeURIComponent(project)}/` : ""}${encodeURIComponent(opts.thread)}` : `${sessionPrefix}${opts.thread}`;
+    // A Codex chat session is stored apart from the Claude session of the same thread. Claude keys stay as they are.
+    // Spec: Chat.CodexConnect.PagePart.Units — sessions per engine.
+    const skey = codeMode
+      ? `${sessionPrefix}mode-code/${project ? `${encodeURIComponent(project)}/` : ""}${encodeURIComponent(opts.thread)}`
+      : engine === "codex"
+        ? `${sessionPrefix}engine-codex/${encodeURIComponent(opts.thread)}`
+        : `${sessionPrefix}${opts.thread}`;
     let sessionId: string | undefined;
     try {
       const kept = JSON.parse(store()?.getItem(skey) ?? "null") as { sessionId?: string; covers?: number } | null;
@@ -1412,6 +1609,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         ...(codeMode && opts.delegateCoding !== undefined ? { delegateCoding: opts.delegateCoding } : {}),
         // Built field by field, never spread from opts.client: a page cannot add keys the bridge did not ask for.
         ...(opts.client?.preview === true ? { client: { preview: true } } : {}),
+        // Only a Codex turn names the engine. A Claude turn must stay byte for byte what an older bridge already accepts.
+        ...(engine === "codex" ? { engine: "codex" as const } : {}),
       },
       (name, args, bridgeTurnId, toolSig, callId) => callTool(name, args, undefined, bridgeTurnId, toolSig, callId),
       true,
@@ -1428,7 +1627,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       role: "assistant",
       content: out.content,
       model: out.model,
-      payer: "person-claude-code",
+      payer: engine === "codex" ? "person-codex" : "person-claude-code",
+      ...(engine === "codex" ? { engine: "codex" as const } : {}),
       ...(out.budgetSpent ? { budgetSpent: true } : {}),
       ...(out.codeMode ? { codeMode: out.codeMode } : {}),
       ...(out.access ? { access: out.access } : {}),
@@ -1460,7 +1660,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         const conn = client.load();
         const res = await bridgeRequest("/v1/hello", { method: "GET", ...(conn ? { headers: { "x-bridge-secret": conn.secret } } : {}) });
         if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
-        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown; update?: unknown; openFolder?: unknown; accessChangeable?: unknown; accessSource?: unknown; accessSaveFailed?: unknown };
+        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown; update?: unknown; openFolder?: unknown; accessChangeable?: unknown; accessSource?: unknown; accessSaveFailed?: unknown; engines?: unknown };
         // Self-update (bridge 0.3.16): four booleans, or absent (an older bridge).
         const up = body.update && typeof body.update === "object" ? (body.update as Record<string, unknown>) : null;
         const update = up && typeof up.supported === "boolean" && typeof up.supervised === "boolean" && typeof up.canWrite === "boolean" && typeof up.busy === "boolean" ? { supported: up.supported, supervised: up.supervised, canWrite: up.canWrite, busy: up.busy } : null;
@@ -1476,6 +1676,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         // Approvals (bridge 0.3.13): only { mode: "sandboxed" } is kept; anything else leaves it off.
         const ap = o && typeof o === "object" && o.approvals && typeof o.approvals === "object" ? (o.approvals as { mode?: unknown }) : null;
         const approvals = ap && ap.mode === "sandboxed" ? { mode: "sandboxed" as const } : null;
+        // Present only when the hello holds an array. A bad entry is dropped; the rest of this object is unchanged.
+        const engines = readEngines(body.engines);
         // Keep only the values runTurn would send: a model that is an alias or a full name, an effort that is one of the five.
         const keep = (v: unknown, ok: (x: string) => boolean) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && ok(x)) : null);
         const models = o && typeof o === "object" ? keep(o.models, (x) => (MODEL_ALIASES as readonly string[]).includes(x) || FULL_MODEL.test(x)) : null;
@@ -1501,6 +1703,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           ...((models && efforts) || web || approvals
             ? { options: { models: models ?? [], efforts: efforts ?? [], delegateCoding: o!.delegateCoding === true, ...(images ? { images } : {}), ...(web ? { web } : {}), ...(approvals ? { approvals } : {}) } }
             : {}),
+          ...(engines ? { engines } : {}),
         };
       } catch {
         return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
@@ -1733,6 +1936,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           s.removeItem(storageKey);
           for (let i = s.length - 1; i >= 0; i--) {
             const k = s.key(i);
+            // The prefix covers Claude keys and `engine-codex/` keys, so one disconnect forgets both engines.
             if (k && k.startsWith(sessionPrefix)) s.removeItem(k);
           }
         }

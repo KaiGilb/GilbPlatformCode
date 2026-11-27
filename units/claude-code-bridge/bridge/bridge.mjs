@@ -12,10 +12,9 @@
 // What it is, and what it is NOT (decided, see README.md):
 //   * It runs the person's own official `claude` CLI as a child process (headless, stream-json). It never reads,
 //     copies, forwards or shows a Claude login token, and it holds no Anthropic API key.
-//   * Billing is the person's Claude subscription, always. ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN and
-//     ANTHROPIC_BASE_URL (and the cloud-provider switches) are removed from every child's environment, `claude auth
-//     status` must say "logged in with a Claude subscription" before the bridge starts, and each turn is stopped if
-//     the CLI reports an API-key source.
+//   * Billing is the person's subscription, always: Claude Code, or Codex on a ChatGPT sign-in. The bridge starts when
+//     at least one of those is ready. API-key variables are removed from every child's environment, and a turn is
+//     stopped if the engine reports an API key.
 //   * It listens on 127.0.0.1 only, answers only the origins on its allow-list (the ones the
 //     host app built into this file; others only by an explicit --allow-origin), and needs a pairing secret that is first
 //     handed over by a short code printed in this terminal.
@@ -23,6 +22,8 @@
 //     is relayed to the app's page (which holds the person's DPoP key) and run on GilbPlatform from there, so no
 //     GilbPlatform token ever reaches this process.
 //   * Claude Code's built-in tools (shell, files, web) are switched off for these turns.
+//   * A turn may name engine "codex". That turn talks to the person's own Codex (`codex app-server`) instead of Claude
+//     Code, on their ChatGPT sign-in only, with only this chat's tools. A turn that names no engine is Claude Code.
 //   * A hand-off to another agent (run_named_role, ask_agent_concept) runs as a NESTED turn of the same kind: the page
 //     opens it with `parentTurnId` (and `parentCallId` when it knows which call asked); it gets its own `claude -p` and
 //     its own MCP tool set, the same environment stripping, the same subscription check. One level only (a hand-off
@@ -38,6 +39,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import { spawn, execFile, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
@@ -138,7 +140,7 @@ function turnUsage(modelUsage, reportedModel, lastStep) {
 }
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.24";
+export const BRIDGE_BUILD = "0.4.0";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -193,6 +195,45 @@ export function childEnv(env = process.env) {
     const ownIdle = Number(out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT);
     if (!(Number.isFinite(ownIdle) && ownIdle > MCP_TOOL_TIMEOUT_MS))
         out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT = String(MCP_TOOL_TIMEOUT_MS);
+    return out;
+}
+/**
+ * The only environment variable names the Codex child gets. A keep list, not a drop list (H-1, HK1-01): a drop list cannot know
+ * every name a person uses for a secret (the hacker's canary run: it missed 16 of 27), and a program from the person's Codex settings
+ * would receive whatever it missed. On Mac and Linux a name is matched exactly. SSH_AUTH_SOCK is not kept.
+ * The proxy names are kept in both cases, because tools read either.
+ */
+export const CODEX_ENV_KEEP = [
+    "PATH", "HOME", "CODEX_HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "SHELL",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+];
+/** Added on Windows, where names are matched without regard to case. */
+export const CODEX_ENV_KEEP_WIN32 = [
+    "SystemRoot", "windir", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "PATHEXT", "ComSpec", "HOMEDRIVE", "HOMEPATH",
+];
+/**
+ * The environment a Codex child gets: only the names in {@link CODEX_ENV_KEEP} (and on Windows {@link CODEX_ENV_KEEP_WIN32}).
+ * It is not {@link childEnv}: a Codex chat turn does not get the Claude tool-timeout variables that function adds.
+ * Everything else is dropped, so a secret under any name stays in the bridge's own process.
+ * @param env The bridge's environment.
+ * @param platform The platform; on `win32` names are compared without regard to case.
+ * @param extraKeep More exact names to keep. Only code that embeds the bridge can pass them (the tests' stand-in controls).
+ * A billing name or an OpenAI key name is refused here too, so this cannot bring an API key back.
+ * @returns The environment for `codex app-server`.
+ */
+export function codexChildEnv(env = process.env, platform = process.platform, extraKeep = []) {
+    const win = platform === "win32";
+    const fold = (n) => (win ? n.toUpperCase() : n);
+    const extra = extraKeep.filter((n) => {
+        const u = n.toUpperCase();
+        return !envDenied(n) && !u.startsWith("OPENAI_") && u !== "CODEX_API_KEY" && u !== "CODEX_ACCESS_TOKEN" && u !== "AZURE_OPENAI_API_KEY";
+    });
+    const keep = new Set([...CODEX_ENV_KEEP, ...(win ? CODEX_ENV_KEEP_WIN32 : []), ...extra].map(fold));
+    const out = {};
+    for (const [k, v] of Object.entries(env)) {
+        if (keep.has(fold(k)))
+            out[k] = v;
+    }
     return out;
 }
 /**
@@ -935,8 +976,10 @@ export function refusedLaunch(found) {
 /**
  * Works out how to start `claude`. Off Windows: the name as given, nothing added. On Windows: an absolute path, and never a shell
  * (`.exe` directly; a `.js` file or an npm `.cmd` shim as node + the script; anything else is refused).
+ * `words`, when passed, replaces the two sentences (Codex uses the same Windows rules with its own sentences).
+ * With `words` omitted the sentences stay the Claude Code ones, byte for byte.
  */
-export function resolveClaudeLaunch(bin, env = process.env, o = {}) {
+export function resolveClaudeLaunch(bin, env = process.env, o = {}, words) {
     const platform = o.platform ?? process.platform;
     if (platform !== "win32")
         return { ok: true, command: bin, prefix: [], shown: bin };
@@ -946,7 +989,7 @@ export function resolveClaudeLaunch(bin, env = process.env, o = {}) {
     const found = resolveBin(bin, env, o.home ?? os.homedir(), "win32", files);
     // Not found: refuse. Never pass the bare name on: CreateProcess looks in the current folder before PATH, so a planted claude.exe there would run.
     if (!found || !files.exists(found))
-        return { ok: false, reason: claudeMissing() };
+        return { ok: false, reason: (words?.missing ?? claudeMissing)() };
     const ext = W.extname(found).toLowerCase();
     if (ext === ".exe" || ext === ".com")
         return { ok: true, command: found, prefix: [], shown: found };
@@ -968,7 +1011,7 @@ export function resolveClaudeLaunch(bin, env = process.env, o = {}) {
             }
         }
     }
-    return { ok: false, reason: refusedLaunch(found) };
+    return { ok: false, reason: (words?.refused ?? refusedLaunch)(found) };
 }
 /**
  * Stops a child. Off Windows: SIGTERM, as before. On Windows kill() ends only that process and leaves what it started, so the
@@ -1056,8 +1099,11 @@ export function listProcsSync(platform) {
         return null;
     }
 }
-/** Every process below `root` by the parent links of this list (not `root` itself). */
-export function descendantsOf(rows, root) {
+/**
+ * Every process below `root` by the parent links of this list (not `root` itself).
+ * @param skip Optional. A pid it answers true for is left out and never walked below. Absent: every row counts (the Claude tracker's use, unchanged).
+ */
+export function descendantsOf(rows, root, skip) {
     const kids = new Map();
     for (const r of rows)
         kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r]);
@@ -1069,6 +1115,9 @@ export function descendantsOf(rows, root) {
             if (seen.has(k.pid))
                 continue;
             seen.add(k.pid);
+            // A refused pid ends its branch: what hangs below it is reached only through it. Pid 1, for one, has every reparented process below it.
+            if (skip?.(k.pid))
+                continue;
             out.push(k);
             todo.push(k.pid);
         }
@@ -2628,6 +2677,1235 @@ export async function systemAccessDialog(platform, env, run = realAccessRun, o =
         return "cancel";
     throw new Error("the dialog failed");
 }
+// ---- engine: codex (shared rules) -------------------------------------------------------------------------------
+// Measured on Kai's Mac, Codex CLI 0.167.2. web_search "disabled" is the 2026-11-24 probe. The flag list is the
+// 2026-11-25 measurement: twenty names, with code_mode_host left on (see the comment above CODEX_CHAT_FLAGS).
+/**
+ * The only Codex line this bridge drives: this major and minor, any patch of exactly three numbers.
+ * `codex --version` on Codex CLI 0.167.2 prints `codex-cli 0.167.2` (probe result, 2026-11-25).
+ * A higher line gets the sentence for a version this bridge does not support yet.
+ * A lower line keeps the too-old sentence. A turn stops after the handshake, before account/read.
+ */
+export const CODEX_SUPPORTED_LINE = "0.167";
+/** No line from the Codex child for this long ends the turn. Longer than the 31 minutes a relayed tool may take, because Codex sends nothing while it waits for one. */
+export const CODEX_IDLE_MS = 35 * 60 * 1000;
+/** A Codex turn ends after this long even when lines keep arriving. The idle sentence is used: the ruling named one sentence for both stops. */
+export const CODEX_TURN_MAX_MS = 24 * 60 * 60 * 1000;
+/** After SIGTERM, a Codex child group that has not ended is SIGKILL'd (Mac and Linux: the child leads its own process group; Windows: taskkill /T /F). */
+export const CODEX_KILL_GRACE_MS = 3000;
+/** One stdout or stderr line longer than this (16 MiB) stops the child. A line of exactly this length is still read. */
+export const CODEX_LINE_MAX = 16 * 1024 * 1024;
+// code_mode_host is left on because Codex 0.167.2 calls MCP tools through it (measured 2026-11-25: with it off the model cannot call the gilb tool); its JavaScript tool has no file or network access (measured the same day); the item guard is the second line.
+/**
+ * Passed to `codex app-server` on every chat turn and on the hello probe, with {@link CODEX_CHAT_OVERRIDES} after them.
+ * One `--disable` in front of each of the twenty names. An unknown name makes that Codex exit at once: the bridge then says to update.
+ */
+export const CODEX_CHAT_FLAGS = [
+    "--disable", "apps",
+    "--disable", "shell_tool",
+    "--disable", "plugins",
+    "--disable", "unified_exec",
+    "--disable", "unified_exec_tty",
+    "--disable", "view_image",
+    "--disable", "image_generation",
+    "--disable", "multi_agent",
+    "--disable", "goals",
+    "--disable", "sleep_tool",
+    "--disable", "tool_suggest",
+    "--disable", "skill_search",
+    "--disable", "hooks",
+    "--disable", "memories",
+    "--disable", "browser_use",
+    "--disable", "browser_use_external",
+    "--disable", "computer_use",
+    "--disable", "in_app_browser",
+    "--disable", "workspace_dependencies",
+    "--disable", "worktrees",
+];
+/** Merged into every thread's config. `web_search: "disabled"` is the switch the probe measured. `model_provider` pins the thread to the ChatGPT sign-in (the answer must say `modelProvider` is `openai`). */
+/**
+ * Where Codex sends the ChatGPT sign-in headers. A person's `config.toml` can point `chatgpt_base_url` or `openai_base_url`
+ * at another host, and Codex then sends `authorization` and `chatgpt-account-id` there while it starts, before the bridge can refuse (H-6, HK1-06).
+ * The two names come from the hacker's listener log (logs/listener2.hk1.jsonl, REAL, Codex 0.167.2): both got those two header names.
+ * The values are Codex's own defaults for a ChatGPT sign-in. The Codex config reference (learn.chatgpt.com/docs/config-file/config-reference,
+ * read 2026-11-26) names both keys and lists no default, so the values are from the Codex source as remembered: UNPROVEN on real Codex 0.167.2.
+ * The other URL keys in that reference (`model_providers.<id>.base_url`, `model_catalog_url`, `mcp_servers.<id>.url`) are not set here:
+ * no evidence shows them receiving the sign-in headers, the model provider is pinned to `openai`, and the person's MCP servers are switched off.
+ * The OTEL exporters are switched off by {@link CODEX_CHAT_OVERRIDES} (K-2): they would send a turn's events, and with `log_user_prompt` the prompt text, to a host the person's config names.
+ */
+export const CODEX_CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/";
+export const CODEX_OPENAI_BASE_URL = "https://chatgpt.com/backend-api/codex";
+/**
+ * Passed to `codex app-server` after {@link CODEX_CHAT_FLAGS}: `-c key=value` sets the two base URLs back to the defaults for this process, and switches the person's `notify` program off (H-1).
+ * A process-level setting is needed because the sign-in check runs at startup, before any thread config exists. The thread config carries the same values.
+ * The value has no TOML quotes: Codex reads a `-c` value that is not valid TOML as a plain string, and a bare URL keeps a Windows command line free of quote marks.
+ */
+export const CODEX_CHAT_OVERRIDES = [
+    "-c", `chatgpt_base_url=${CODEX_CHATGPT_BASE_URL}`,
+    "-c", `openai_base_url=${CODEX_OPENAI_BASE_URL}`,
+    // The person's `notify` program (config key `notify`, an array of strings: hacker's repro, HK1-01, REAL; Codex config reference) runs at the end of a turn.
+    // An empty array switches it off. The reference does not say that an empty array disables it: UNPROVEN on real Codex 0.167.2.
+    "-c", "notify=[]",
+    // OpenTelemetry (K-2, HK2 question 1). The Codex config reference (https://learn.chatgpt.com/docs/config-file/config-reference, read 2026-11-27; developers.openai.com/codex/... redirects there) lists
+    // `otel.exporter` as `none | otlp-http | otlp-grpc`, `otel.trace_exporter` as `none | otlp-http | otlp-grpc`, and `otel.metrics_exporter` as `none | statsig | otlp-http | otlp-grpc`
+    // ("Set to `none` to disable metrics export."). The advanced guide says: "If `exporter = "none"` Codex records events but sends nothing." `otel.log_user_prompt` is a boolean.
+    // The `-c` spelling of these dotted keys is UNPROVEN on real Codex 0.167.2 (tested only on the stand-in, MOCK).
+    "-c", "otel.exporter=none",
+    "-c", "otel.trace_exporter=none",
+    "-c", "otel.metrics_exporter=none",
+    "-c", "otel.log_user_prompt=false",
+];
+export const CODEX_CHAT_CONFIG = {
+    web_search: "disabled",
+    model_provider: "openai",
+    chatgpt_base_url: CODEX_CHATGPT_BASE_URL,
+    openai_base_url: CODEX_OPENAI_BASE_URL,
+    // The same four OTEL values as the process overrides. Whether real Codex takes a nested `otel` table in a thread config is UNPROVEN.
+    otel: { exporter: "none", trace_exporter: "none", metrics_exporter: "none", log_user_prompt: false },
+};
+/** Appended to the page's system text. Sub-agents cannot be switched off in Codex 0.167.2, so the model is told to hand off instead. */
+export const CODEX_CHAT_SENTENCE = "Use only the gilb tools. Do not start other agents yourself: when the work needs another agent, use the hand-off tool this chat gives you.";
+/** Efforts a Codex turn may name. Claude's list is separate and does not include `ultra`. */
+export const CODEX_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"];
+const CODEX_MODEL_RE = /^[a-z0-9][a-z0-9.-]{0,62}$/;
+/** Shown when `codex` cannot be found, on a turn and in hello. */
+export const CODEX_NOT_INSTALLED = "Codex is not installed on this computer (the `codex` command was not found). Install it with `npm install -g @openai/codex`, run `codex login` and choose Sign in with ChatGPT.";
+const CODEX_TOO_OLD = "Your Codex is too old for this bridge. Update it with `npm install -g @openai/codex`.";
+const CODEX_APIKEY_MSG = "Codex is signed in with an API key. This bridge runs Codex only on your ChatGPT sign-in. Run `codex logout`, then `codex login` and choose Sign in with ChatGPT.";
+const CODEX_NONE_MSG = "Codex is not signed in. Run `codex login` and choose Sign in with ChatGPT.";
+const CODEX_OTHER_MSG = "Codex is signed in with another kind of account. This bridge runs Codex only on your ChatGPT sign-in.";
+const CODEX_UNREADABLE_MSG = "The bridge stopped this turn: Codex did not confirm your ChatGPT sign-in. Send your message again. If this keeps happening, run `codex login`.";
+const CODEX_LIMITS_MSG = "The bridge stopped this turn: Codex did not start with only this chat's tools.";
+const CODEX_GUARD_MSG = "The bridge stopped this turn: Codex tried to use a tool this chat does not allow.";
+const CODEX_CONFIG_MSG = "The bridge stopped this turn: it could not read which tools your Codex has.";
+const CODEX_RESUME_MSG = "The Codex session could not be resumed.";
+/** The child exited before the handshake and its stderr named an unknown `--disable` flag. */
+const CODEX_UNKNOWN_TURN = "Could not start Codex: this bridge does not know your Codex version yet. Update the bridge.";
+const CODEX_UNKNOWN_HELLO = "This bridge does not support your Codex version yet. Update the bridge.";
+const CODEX_UNREADABLE_VERSION_TURN = "The bridge stopped this turn: it could not read your Codex version. Update Codex with `npm install -g @openai/codex`.";
+const CODEX_UNREADABLE_VERSION_HELLO = "The bridge could not read your Codex version. Update Codex with `npm install -g @openai/codex`.";
+const CODEX_IDLE_MSG = "Codex stopped answering, so the bridge stopped this turn.";
+const CODEX_LINE_TURN = "The bridge stopped this turn: Codex sent more than it will read.";
+const CODEX_LINE_HELLO = "Could not start Codex: it sent more than the bridge will read.";
+const CODEX_PROVIDER_MSG = "The bridge stopped this turn: your Codex is set to use another model provider. This bridge runs Codex only on your ChatGPT sign-in.";
+/**
+ * The only item types a chat turn may carry: the model's words, its reasoning, the page's message, an MCP tool call
+ * (which {@link codexMcpCallAllowed} narrows to this turn's `gilb` server and Codex's own resource tools), and three
+ * that touch no file and no network: `collabAgentToolCall` (a sub-agent start), `plan` and `contextCompaction`.
+ * A sub-agent is allowed because its thread inherits this lock-down and this guard watches every thread of the process
+ * (Kai-Zen ruling 2026-11-24; H-2b, 2026-11-26). `plan` and `contextCompaction` are bookkeeping.
+ * Every other type stops the turn, so a type Codex adds later is stopped until this list is changed (H-2, HK1-02).
+ * `subAgentActivity` is not on the list and stops the turn.
+ * Names are compared exactly as Codex writes them: no trimming, no case folding.
+ */
+const CODEX_ALLOWED_ITEMS = new Set(["agentMessage", "reasoning", "userMessage", "mcpToolCall", "collabAgentToolCall", "plan", "contextCompaction"]);
+/**
+ * Tools Codex itself exposes on the pseudo-server named `codex`.
+ * They list or read the resources of the MCP servers this turn connected, which here is only `gilb`.
+ * Measured 2026-11-25: the model calls the first two during a locked-down chat. Any other tool on that server stops the turn.
+ */
+export const CODEX_BUILTIN_MCP_TOOLS = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"];
+/** An MCP tool call this chat allows: this turn's gilb server, or one of Codex's own resource tools. */
+function codexMcpCallAllowed(item) {
+    if (item.server === "gilb")
+        return true;
+    const tool = item.tool;
+    return item.server === "codex" && typeof tool === "string" && CODEX_BUILTIN_MCP_TOOLS.includes(tool);
+}
+/** Three numbers with no leading zero, so `0.0167.3` is not read as 0.167.3. Not understood goes the existing way. */
+const CODEX_VERSION_SHAPE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+/**
+ * The CLI version in Codex's initialize userAgent, or null when it is not the measured shape.
+ * The measured userAgent puts the three numbers from `codex --version` after the first slash, then a space
+ * (`gilb-codex-probe/0.167.2 (Mac OS …)`, 2026-11-24). A letter, a hyphen or another number glued on is not that shape.
+ * @param userAgent The `userAgent` field from initialize.
+ * @returns The three numbers, or null when the text is not a version this bridge can read.
+ */
+export function codexVersionOf(userAgent) {
+    if (typeof userAgent !== "string" || userAgent.length === 0)
+        return null;
+    const slash = userAgent.indexOf("/");
+    if (slash < 0)
+        return null;
+    const token = userAgent.slice(slash + 1).split(/\s/, 1)[0] ?? "";
+    return CODEX_VERSION_SHAPE.test(token) ? token : null;
+}
+/** True when `version` is exactly three numbers on {@link CODEX_SUPPORTED_LINE}. */
+function codexOnSupportedLine(version) {
+    const m = CODEX_VERSION_SHAPE.exec(version);
+    if (!m)
+        return false;
+    return `${m[1]}.${m[2]}` === CODEX_SUPPORTED_LINE;
+}
+/**
+ * True when `version` is at least `min`. Both must be x.y.z. Anything else is not new enough.
+ * The callers pass the first release of the supported line, to tell a newer Codex (not supported yet) from an older one (too old).
+ * @param version The version read from Codex.
+ * @param min The version to compare with: the first release of {@link CODEX_SUPPORTED_LINE}.
+ */
+export function codexVersionAtLeast(version, min) {
+    const part = (s) => {
+        const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(s);
+        if (!m)
+            return null;
+        return [Number(m[1]), Number(m[2]), Number(m[3])];
+    };
+    const a = part(version);
+    const b = part(min);
+    if (!a || !b)
+        return false;
+    for (let i = 0; i < 3; i++)
+        if (a[i] !== b[i])
+            return a[i] > b[i];
+    return true;
+}
+function asRecord(v) {
+    if (v === null || typeof v !== "object" || Array.isArray(v))
+        return null;
+    return v;
+}
+/** What `account/read` said. An unreadable answer is "unknown", never treated as signed in. */
+function classifyCodexAccount(result) {
+    const root = asRecord(result);
+    if (!root || !Object.prototype.hasOwnProperty.call(root, "account"))
+        return { kind: "unknown", plan: null };
+    if (root.account === null)
+        return { kind: "none", plan: null };
+    const account = asRecord(root.account);
+    if (!account || typeof account.type !== "string")
+        return { kind: "unknown", plan: null };
+    if (account.type === "chatgpt")
+        return { kind: "chatgpt", plan: typeof account.planType === "string" ? account.planType : null };
+    if (account.type === "apiKey")
+        return { kind: "apiKey", plan: null };
+    return { kind: "other", plan: null };
+}
+/**
+ * True when an `account/updated` notice still says the account is ChatGPT.
+ * The hacker's stand-in sent `{ authMode: "apikey", planType: null }` (HK1-07). The word for a ChatGPT sign-in is the
+ * same `chatgpt` that `account/read` uses. A missing field, null, or any other word is not a ChatGPT account.
+ * @param params The notice's params.
+ */
+function codexAccountUpdateKeeps(params) {
+    return params.authMode === "chatgpt";
+}
+/** The sentence for an account that is not ChatGPT, or null when it is. */
+function codexAccountRefusal(kind) {
+    if (kind === "chatgpt")
+        return null;
+    if (kind === "apiKey")
+        return CODEX_APIKEY_MSG;
+    if (kind === "none")
+        return CODEX_NONE_MSG;
+    if (kind === "other")
+        return CODEX_OTHER_MSG;
+    return CODEX_UNREADABLE_MSG;
+}
+/**
+ * Why hello says Codex is not ready, or undefined when it is.
+ * Unknown `--disable` wins over "too old": the process never got as far as a version.
+ * A handshake with no version is its own sentence. A line the bridge will not read is its own sentence too.
+ */
+function codexHelloReason(s) {
+    if (!s.installed)
+        return CODEX_NOT_INSTALLED;
+    if (s.unknownFlag)
+        return CODEX_UNKNOWN_HELLO;
+    if (s.lineTooLong)
+        return CODEX_LINE_HELLO;
+    if (s.version === null && s.handshook)
+        return CODEX_UNREADABLE_VERSION_HELLO;
+    if (s.version === null)
+        return s.startError ?? "Could not start Codex: timed out";
+    if (!s.supported) {
+        // A higher line is a version this bridge has not been tested with. It is not the too-old sentence.
+        if (s.version && codexVersionAtLeast(s.version, `${CODEX_SUPPORTED_LINE}.0`))
+            return CODEX_UNKNOWN_HELLO;
+        return CODEX_TOO_OLD;
+    }
+    return codexAccountRefusal(s.account) ?? undefined;
+}
+/** Models from `model/list`, or null when the answer is not a list. */
+function parseCodexModels(result) {
+    const data = asRecord(result)?.data;
+    if (!Array.isArray(data))
+        return null;
+    const models = [];
+    for (const row of data) {
+        const r = asRecord(row);
+        if (!r || typeof r.id !== "string")
+            continue;
+        const efforts = [];
+        if (Array.isArray(r.supportedReasoningEfforts)) {
+            for (const e of r.supportedReasoningEfforts) {
+                const effort = asRecord(e)?.reasoningEffort;
+                if (typeof effort === "string")
+                    efforts.push(effort);
+            }
+        }
+        models.push({ id: r.id, label: typeof r.displayName === "string" ? r.displayName : r.id, default: r.isDefault === true, efforts });
+    }
+    return models;
+}
+/** Names of the person's configured MCP servers, or null when the answer cannot be read. No `mcp_servers` means none. */
+function codexConfigServers(result) {
+    const config = asRecord(asRecord(result)?.config);
+    if (!config)
+        return null;
+    if (config.mcp_servers === undefined)
+        return [];
+    const mcp = asRecord(config.mcp_servers);
+    if (!mcp)
+        return null;
+    return Object.keys(mcp);
+}
+function parseCodexThread(result) {
+    const root = asRecord(result);
+    const thread = asRecord(root?.thread);
+    const id = typeof thread?.id === "string" ? thread.id : "";
+    if (!root || !id)
+        return null;
+    const model = typeof root.model === "string" ? root.model : typeof thread?.model === "string" ? thread.model : "";
+    return { id, model, approvalPolicy: root.approvalPolicy, sandboxType: asRecord(root.sandbox)?.type, modelProvider: root.modelProvider };
+}
+/** One row per server. Null when a row has no string name or its tools are not a plain object: a guess must not pass the check. */
+function parseCodexServers(result) {
+    const data = asRecord(result)?.data;
+    if (!Array.isArray(data))
+        return null;
+    const out = [];
+    for (const row of data) {
+        const r = asRecord(row);
+        const tools = asRecord(r?.tools);
+        if (!r || typeof r.name !== "string" || !tools)
+            return null;
+        out.push({ name: r.name, tools: Object.keys(tools) });
+    }
+    return out;
+}
+/**
+ * Why this server list is not exactly one `gilb` row with this chat's tools, or null when it is.
+ * A repeated name is a refusal on its own. A row the parser could not read never reaches here.
+ * @param servers The parsed list, or null when it could not be read.
+ * @param toolNames The tools this turn offered.
+ * @returns A short reason for the log, or null when the list is the one this chat allows.
+ */
+function codexServersRefusal(servers, toolNames) {
+    if (!servers)
+        return "the server list could not be read";
+    const seen = new Set();
+    for (const s of servers) {
+        if (seen.has(s.name))
+            return `server ${s.name} is listed twice`;
+        seen.add(s.name);
+    }
+    const gilbs = servers.filter((s) => s.name === "gilb");
+    if (gilbs.length !== 1)
+        return "gilb was not the one server";
+    const foreign = servers.filter((s) => s.name !== "gilb" && s.tools.length > 0);
+    if (foreign.length > 0)
+        return `server ${foreign[0].name} has ${foreign[0].tools.length} tools`;
+    if (!sameNameSet(gilbs[0].tools, toolNames))
+        return "gilb tools differ";
+    return null;
+}
+/**
+ * Why an item stops the turn, or null when the notification carries no item or the item is allowed.
+ * This is an allow list. A notification with no `item` key is not an item notification and passes.
+ * An item that is not an object, has no type, or has a type that is not a string stops the turn, because a guard
+ * that skips what it cannot read lets the hostile shape through.
+ * @param params The notification's params.
+ * @returns A short reason for the log, never the item's own text.
+ */
+function codexBlockedItem(params) {
+    if (!Object.prototype.hasOwnProperty.call(params, "item"))
+        return null;
+    const item = asRecord(params.item);
+    if (!item)
+        return "item is not an object";
+    const type = item.type;
+    if (typeof type !== "string")
+        return "item type is not a string";
+    if (!CODEX_ALLOWED_ITEMS.has(type))
+        return `item type ${JSON.stringify(type.slice(0, 40))}`;
+    if (type === "mcpToolCall" && !codexMcpCallAllowed(item))
+        return "mcpToolCall to a server or tool this chat does not allow";
+    return null;
+}
+/** Token use for the page. Cached input is not counted twice: the page adds the three input counts. */
+function codexTurnUsage(raw, model) {
+    const last = asRecord(asRecord(raw)?.last);
+    if (!last)
+        return undefined;
+    const contextWindow = usageCount(asRecord(raw)?.modelContextWindow);
+    const inputTokens = usageCount(last.inputTokens);
+    const cached = usageCount(last.cachedInputTokens);
+    const outputTokens = usageCount(last.outputTokens);
+    if (contextWindow === undefined || contextWindow <= 0 || inputTokens === undefined || cached === undefined || outputTokens === undefined)
+        return undefined;
+    const fresh = inputTokens - cached;
+    if (!Number.isInteger(fresh) || fresh < 0 || fresh > USAGE_MAX)
+        return undefined;
+    return { model, contextWindow, inputTokens: fresh, cacheReadInputTokens: cached, cacheCreationInputTokens: 0, outputTokens };
+}
+function sameNameSet(a, b) {
+    if (a.length !== b.length)
+        return false;
+    const s = new Set(b);
+    return a.every((n) => s.has(n));
+}
+function stripAnsi(s) {
+    return s.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+}
+function stderrTail(s) {
+    return stripAnsi(s).trim().split("\n").map((l) => l.trim()).filter(Boolean).slice(-2).join(" ");
+}
+function rpcMessage(error) {
+    const message = asRecord(error)?.message;
+    return typeof message === "string" && message.trim() ? message.slice(0, 300) : "the request failed";
+}
+/** The page's system text, a blank line, then the one sentence every Codex chat turn carries. */
+function codexDeveloperInstructions(system) {
+    return `${system}\n\n${CODEX_CHAT_SENTENCE}`;
+}
+/** Thread config: the person's servers off, and this turn's gilb server on with no approval question. */
+function codexThreadConfig(serverNames, gilbUrl) {
+    const mcp = {};
+    for (const name of serverNames)
+        if (name !== "gilb")
+            mcp[name] = { enabled: false };
+    // Measured: default_tools_approval_mode "approve" with approvalPolicy "never" runs the tool and asks nothing.
+    // tool_timeout_sec 2000: a hand-off may run 30 minutes, and the bridge waits that long for the tool result.
+    mcp.gilb = { url: gilbUrl, default_tools_approval_mode: "approve", tool_timeout_sec: 2000, startup_timeout_sec: 30 };
+    return { ...CODEX_CHAT_CONFIG, mcp_servers: mcp };
+}
+class CodexCallError extends Error {
+    kind;
+    constructor(message, kind) {
+        super(message);
+        this.kind = kind;
+        this.name = "CodexCallError";
+    }
+}
+/**
+ * JSON-RPC over the app-server's stdio: one JSON object per line, no "jsonrpc" field.
+ * A line that is not one JSON object is skipped. A line with a method and an id is a request from the server.
+ */
+class CodexRpc {
+    child;
+    buf = "";
+    errBuf = "";
+    nextId = 1;
+    pending = new Map();
+    err = "";
+    note = () => { };
+    asked = () => { };
+    onActivity = () => { };
+    onLineTooLong = () => { };
+    outDec = new StringDecoder("utf8");
+    errDec = new StringDecoder("utf8");
+    tooLong = false;
+    exited = false;
+    constructor(child) {
+        this.child = child;
+        child.on("close", () => {
+            this.exited = true;
+            // A character split across the last chunk is still one character. The flush does not invent a newline.
+            const rest = this.outDec.end();
+            if (rest)
+                this.pushOut(rest);
+            const errRest = this.errDec.end();
+            if (errRest)
+                this.pushErr(errRest);
+            const err = new CodexCallError("exited", "exit");
+            for (const p of this.pending.values()) {
+                clearTimeout(p.timer);
+                p.reject(err);
+            }
+            this.pending.clear();
+        });
+        // One decoder per stream: joining Buffer chunks as strings replaces a character cut by a chunk edge.
+        child.stderr?.on("data", (d) => {
+            this.pushErr(typeof d === "string" ? d : this.errDec.write(d));
+        });
+        child.stdout?.on("data", (d) => {
+            this.pushOut(typeof d === "string" ? d : this.outDec.write(d));
+        });
+        child.stdin?.on("error", () => { });
+        child.on("error", (e) => {
+            const err = new CodexCallError(e.message, "exit");
+            for (const p of this.pending.values()) {
+                clearTimeout(p.timer);
+                p.reject(err);
+            }
+            this.pending.clear();
+        });
+    }
+    onNotification(fn) { this.note = fn; }
+    onServerRequest(fn) { this.asked = fn; }
+    /** A complete line arrived. The idle clock uses this, not a relayed tool result. */
+    setActivity(fn) { this.onActivity = fn; }
+    /** A line was longer than {@link CODEX_LINE_MAX}. The turn or the probe stops from here. */
+    setLineTooLong(fn) { this.onLineTooLong = fn; }
+    lineTooLong() { return this.tooLong; }
+    stderr() { return this.errBuf ? (this.err + this.errBuf).slice(-4000) : this.err; }
+    hasExited() { return this.exited; }
+    pushOut(text) {
+        if (this.tooLong)
+            return;
+        this.buf += text;
+        this.drain();
+    }
+    pushErr(text) {
+        if (this.tooLong)
+            return;
+        this.errBuf += text;
+        let i = this.errBuf.indexOf("\n");
+        while (i >= 0) {
+            if (i > CODEX_LINE_MAX) {
+                this.noteTooLong();
+                return;
+            }
+            const line = this.errBuf.slice(0, i);
+            this.errBuf = this.errBuf.slice(i + 1);
+            this.err = (this.err + line + "\n").slice(-4000);
+            this.onActivity();
+            i = this.errBuf.indexOf("\n");
+        }
+        if (this.errBuf.length > CODEX_LINE_MAX)
+            this.noteTooLong();
+    }
+    noteTooLong() {
+        if (this.tooLong)
+            return;
+        this.tooLong = true;
+        this.buf = "";
+        this.errBuf = "";
+        const err = new CodexCallError("line too long", "exit");
+        for (const p of this.pending.values()) {
+            clearTimeout(p.timer);
+            p.reject(err);
+        }
+        this.pending.clear();
+        this.onLineTooLong();
+    }
+    request(method, params, timeoutMs) {
+        const id = this.nextId++;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.pending.delete(id);
+                reject(new CodexCallError("timed out", "timeout"));
+            }, timeoutMs);
+            this.pending.set(id, { resolve, reject, timer });
+            this.write({ method, id, params });
+        });
+    }
+    notify(method, params) { this.write({ method, params }); }
+    respond(id, result) { this.write({ id, result }); }
+    respondError(id, code, message) { this.write({ id, error: { code, message } }); }
+    write(obj) {
+        try {
+            this.child.stdin?.write(`${JSON.stringify(obj)}\n`);
+        }
+        catch { /* the child is already gone */ }
+    }
+    drain() {
+        if (this.tooLong)
+            return;
+        let i = this.buf.indexOf("\n");
+        while (i >= 0) {
+            if (i > CODEX_LINE_MAX) {
+                this.noteTooLong();
+                return;
+            }
+            const raw = this.buf.slice(0, i);
+            this.buf = this.buf.slice(i + 1);
+            this.onActivity();
+            i = this.buf.indexOf("\n");
+            const line = raw.trim();
+            if (!line)
+                continue;
+            let parsed;
+            try {
+                parsed = JSON.parse(line);
+            }
+            catch {
+                continue;
+            }
+            const msg = asRecord(parsed);
+            if (!msg)
+                continue;
+            const method = typeof msg.method === "string" ? msg.method : "";
+            if (method && msg.id !== undefined) {
+                this.asked(method, msg.id, asRecord(msg.params) ?? {});
+                continue;
+            }
+            if (msg.id !== undefined && !method) {
+                const id = typeof msg.id === "number" ? msg.id : Number(msg.id);
+                const p = Number.isInteger(id) ? this.pending.get(id) : undefined;
+                if (!p)
+                    continue;
+                clearTimeout(p.timer);
+                this.pending.delete(id);
+                if (msg.error !== undefined)
+                    p.reject(new CodexCallError(rpcMessage(msg.error), "rpc"));
+                else
+                    p.resolve(msg.result);
+                continue;
+            }
+            if (method)
+                this.note(method, asRecord(msg.params) ?? {});
+        }
+        if (this.buf.length > CODEX_LINE_MAX)
+            this.noteTooLong();
+    }
+}
+function winCodexCandidates(base, env) {
+    const ext = path.win32.extname(base).toLowerCase();
+    if (WIN_EXTS.includes(ext) || ext === ".js" || ext === ".cjs" || ext === ".mjs")
+        return [base];
+    return winExts(env).flatMap((x) => [base + x, base + x.toUpperCase()]);
+}
+/** A regular file. A link is followed. A directory is not a binary, even when the directory itself is executable. */
+function isRegularFile(f) {
+    try {
+        return fs.statSync(f).isFile();
+    }
+    catch {
+        return false;
+    }
+}
+/** A regular file the person may execute. Windows has no useful X bit, so a regular file is enough there. */
+function isExecutableFile(f, win) {
+    if (!isRegularFile(f))
+        return false;
+    if (win)
+        return true;
+    try {
+        fs.accessSync(f, fs.constants.X_OK);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+/** Version-looking names, newest first. A name with no number sorts last. Compared as numbers, so v22.23.0 beats v22.9.0. */
+function newestVersionNames(names) {
+    const nums = (name) => {
+        const found = name.match(/\d+/g);
+        return found ? found.map((n) => Number(n)) : [];
+    };
+    return [...names].sort((a, b) => {
+        const ka = nums(a);
+        const kb = nums(b);
+        const n = Math.max(ka.length, kb.length);
+        for (let i = 0; i < n; i++) {
+            const da = ka[i] ?? -1;
+            const db = kb[i] ?? -1;
+            if (da !== db)
+                return db - da;
+        }
+        return 0;
+    });
+}
+/**
+ * Fixed folders a Codex lookup searches after the home folders, on macOS and Linux, in this order.
+ * A short PATH, the kind a login item has, does not include them. They sit outside the home folder,
+ * so a test home cannot stand in for them.
+ */
+export const CODEX_FIXED_LOOKUP_DIRS = ["/opt/homebrew/bin", "/usr/local/bin"];
+/**
+ * The absolute path of the Codex CLI, or null when nothing is there.
+ * A bare name is looked up in this order: PATH, the folder of the running node, then each node version
+ * manager bin under the home folder that exists (newest version first), then `~/.local/bin`, and on macOS
+ * and Linux {@link CODEX_FIXED_LOOKUP_DIRS} unless `fixedDirs` is given. Windows also looks in
+ * `%APPDATA%\\npm` and `%LOCALAPPDATA%\\pnpm`.
+ * The person's PATH is trusted, the same way a bare `claude` name is trusted. A `codex` earlier on PATH is the one that runs.
+ * A bare-name hit must be a regular file the person may execute. An explicit path must be a regular file (a link is followed).
+ * @param name A path, or the bare command name.
+ * @param env The environment whose PATH is searched.
+ * @param home The home folder the version-manager bins are under.
+ * @param platform `win32` uses PATHEXT and Windows paths.
+ * @param execPath This process's node, so a global install beside node is found when PATH is short.
+ * @param fixedDirs macOS and Linux folders after the home folders. Omitted means {@link CODEX_FIXED_LOOKUP_DIRS}.
+ */
+export function resolveCodexBin(name, env = process.env, home = os.homedir(), platform = process.platform, execPath = process.execPath, fixedDirs = CODEX_FIXED_LOOKUP_DIRS) {
+    const win = platform === "win32";
+    const P = win ? path.win32 : path;
+    if (win ? /[\\/]/.test(name) || path.win32.isAbsolute(name) : name.includes("/") || path.isAbsolute(name)) {
+        const abs = P.resolve(name);
+        if (win)
+            return winCodexCandidates(abs, env).find((f) => isRegularFile(f)) ?? null;
+        return isRegularFile(abs) ? abs : null;
+    }
+    const sep = win ? ";" : ":";
+    const dirs = String(envGet(env, "PATH") ?? "").split(sep).map((d) => d.trim().replace(/^"(.*)"$/, "$1")).filter((d) => d && (!win || path.win32.isAbsolute(d)));
+    dirs.push(P.dirname(execPath));
+    dirs.push(P.join(home, ".local", "share", "fnm", "aliases", "default", "bin"));
+    const versioned = (parent, rest) => {
+        let names;
+        try {
+            names = fs.readdirSync(parent);
+        }
+        catch {
+            return;
+        }
+        for (const child of newestVersionNames(names))
+            dirs.push(P.join(parent, child, ...rest));
+    };
+    versioned(P.join(home, ".local", "share", "fnm", "node-versions"), ["installation", "bin"]);
+    versioned(P.join(home, ".nvm", "versions", "node"), ["bin"]);
+    dirs.push(P.join(home, ".volta", "bin"));
+    dirs.push(P.join(home, ".asdf", "shims"));
+    dirs.push(P.join(home, ".local", "share", "mise", "shims"));
+    dirs.push(P.join(home, ".npm-global", "bin"));
+    dirs.push(P.join(home, ".bun", "bin"));
+    dirs.push(P.join(home, "Library", "pnpm"));
+    dirs.push(P.join(home, ".local", "bin"));
+    // Outside the home folder, so only this list can move them. Production passes none and gets today's list.
+    if (!win)
+        dirs.push(...fixedDirs);
+    else {
+        const appData = envGet(env, "APPDATA") ?? path.win32.join(home, "AppData", "Roaming");
+        const localApp = envGet(env, "LOCALAPPDATA") ?? path.win32.join(home, "AppData", "Local");
+        dirs.push(path.win32.join(appData, "npm"), path.win32.join(localApp, "pnpm"));
+    }
+    for (const dir of dirs) {
+        if (!dir)
+            continue;
+        if (win) {
+            if (!path.win32.isAbsolute(dir))
+                continue;
+            const hit = winCodexCandidates(path.win32.join(dir, name), env).find((f) => isExecutableFile(f, true));
+            if (hit)
+                return hit;
+        }
+        else {
+            const f = path.join(dir, name);
+            if (isExecutableFile(f, false))
+                return f;
+        }
+    }
+    return null;
+}
+/**
+ * How to start Codex. Off Windows, a script (npm's `codex` links to one) is started with this process's node.
+ * On Windows, the same safe-launch rules as Claude Code, with Codex's sentences.
+ * @param bin The `codexBin` option or the `--codex` path. The command line passes the name `codex` when the flag is absent.
+ */
+export function resolveCodexLaunch(bin, env = process.env, o = {}) {
+    const platform = o.platform ?? process.platform;
+    const home = o.home ?? os.homedir();
+    const nodePath = o.nodePath ?? process.execPath;
+    const found = resolveCodexBin(bin, env, home, platform, nodePath, o.fixedDirs);
+    if (!found)
+        return { ok: false, reason: CODEX_NOT_INSTALLED };
+    if (platform === "win32") {
+        // The "found, but not safe to start" sentence is not named in the brief. It mirrors Claude's, with Codex's install line.
+        return resolveClaudeLaunch(found, env, { ...o, platform: "win32", home }, {
+            missing: () => CODEX_NOT_INSTALLED,
+            refused: (p) => `Codex was found as ${p}, which the bridge cannot start safely. Install it with \`npm install -g @openai/codex\`, then start the bridge again.`,
+        });
+    }
+    let real = found;
+    try {
+        real = fs.realpathSync(found);
+    }
+    catch { /* start the path we found */ }
+    if (/\.(?:m|c)?js$/i.test(real))
+        return { ok: true, command: nodePath, prefix: [real], shown: real };
+    return { ok: true, command: real, prefix: [], shown: real };
+}
+/** Marks a Codex chat or probe child. Off Windows it leads its own process group, so stopping it signals the whole group. */
+const CODEX_CHILD = Symbol("codexChild");
+const codexStopJobs = new WeakMap();
+function childGone(child) {
+    return child.exitCode !== null || child.signalCode !== null;
+}
+/** Resolves true once the child has exited, or false when `ms` passes first. Subscribing after the exit is not a miss. */
+function waitChildGone(child, ms) {
+    if (childGone(child))
+        return Promise.resolve(true);
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = (gone) => {
+            if (done)
+                return;
+            done = true;
+            clearTimeout(timer);
+            child.off("exit", onExit);
+            resolve(gone);
+        };
+        const onExit = () => finish(true);
+        const timer = setTimeout(() => finish(childGone(child)), ms);
+        child.once("exit", onExit);
+        if (childGone(child))
+            finish(true);
+    });
+}
+// ---- ending everything a Codex turn started (HK2-01) ---------------------------------------------------------------------
+// A process group is not enough: a descendant that calls setpgid (Codex's own bookkeeping git does) leaves the group but stays in the
+// session, and a child that exits first hands its helpers to init. So the bridge keeps a look at the child's descendants by parent pid during
+// the turn and takes one more look before it signals anything. Then it signals the group and each pid in that snapshot.
+/**
+ * How often a live Codex child's descendants are looked at (Mac and Linux). A descendant that lives shorter than this and is gone before the stop is not missed: it is gone.
+ * Decision: 1000 ms, not 200 ms (ruling L-2). One look is one `ps -A`, about 17 ms of CPU (median of 60 runs, this Mac, 2026-11-27 17:01 UTC), which is
+ * about 8.7% of one core at 200 ms and about 1.7% at 1000 ms, for the whole life of every Codex child. The price is a wider known gap: a helper that
+ * is started and then handed to init (its parent, the child, exits first) less than this long after it started can be missed.
+ */
+export const CODEX_TREE_LOOK_MS = 1000;
+/**
+ * How long one read of the process list is waited for, at a stop and in the watch. A read that takes longer counts as unreadable.
+ * Decision: 1500 ms. One `ps -A` took about 18 ms of CPU on a loaded Mac (tester round 9 measured it), so 1500 ms is far above
+ * a slow but healthy read, and it is below the 2000 ms kill grace, so a hung `ps` delays a stop by at most this much per read (two reads: 3 s)
+ * and the group signal still goes out.
+ */
+const CODEX_TREE_LIST_MS = 1500;
+const CODEX_TREE = Symbol("codexTree");
+let codexTreeListSeam;
+/**
+ * Test seam: replaces the process list that every Codex stop and watch reads (the real `ps` is never touched). Undefined puts the real list back.
+ * @param list The replacement. It may throw, reject, hang or return junk: the readers cope with all four.
+ */
+export function setCodexTreeListForTests(list) {
+    codexTreeListSeam = list;
+}
+const isProcRow = (r) => {
+    const o = r;
+    return typeof o === "object" && o !== null && Number.isInteger(o.pid) && Number.isInteger(o.ppid) && typeof o.start === "string";
+};
+/**
+ * Reads a process list for the Codex stop and watch, and never fails: a throw (also a synchronous one, such as `spawn EPERM`), a rejection, a read
+ * that takes longer than `boundMs` and a reply that is not a list all give null; a list with junk entries keeps only its well-formed rows.
+ * Decision: the failure is handled here and not in `listProcs`, because the Claude code-turn tracker shares `listProcs` and its behaviour must not change.
+ * The bound timer is unref'd (it never keeps the process alive) and cleared as soon as the read is over (it never fires after the stop has finished).
+ * @param read Gives the list.
+ * @param boundMs Longest wait for one read.
+ * @returns The well-formed rows, or null when the list could not be read in time.
+ */
+async function readProcsSafely(read, boundMs) {
+    let timer;
+    try {
+        const bound = new Promise((resolve) => {
+            timer = setTimeout(() => resolve(null), boundMs);
+            timer.unref();
+        });
+        // `Promise.resolve().then(read)` also turns a synchronous throw into a rejection. The race keeps a late rejection from being unhandled.
+        const out = await Promise.race([Promise.resolve().then(read), bound]);
+        return Array.isArray(out) ? out.filter(isProcRow) : null;
+    }
+    catch {
+        return null;
+    }
+    finally {
+        if (timer)
+            clearTimeout(timer);
+    }
+}
+/**
+ * The one rule for which pid may be signalled, and so which pid the descendant walk may reach: a whole number above 1 that is neither this process nor this process's group.
+ * The stop and the watch both use it, so a refused pid cannot be a way in to the pids below it.
+ */
+function signalablePid(n, ownPid, ownPgid) {
+    return typeof n === "number" && Number.isInteger(n) && n > 1 && n !== ownPid && n !== ownPgid;
+}
+let ownPgidCache;
+/** The bridge's own process group id (ps), read once. Null when ps cannot say. */
+function ownPgidNow() {
+    if (ownPgidCache !== undefined)
+        return ownPgidCache;
+    try {
+        const n = Number(String(execFileSync("/bin/ps", ["-o", "pgid=", "-p", String(process.pid)], { timeout: 3000, encoding: "utf8", env: { PATH: "/usr/bin:/bin", LC_ALL: "C" } })).trim());
+        ownPgidCache = Number.isInteger(n) && n > 0 ? n : null;
+    }
+    catch {
+        ownPgidCache = null;
+    }
+    return ownPgidCache;
+}
+/**
+ * Updates `seen` from one process list: forgets what is gone or reused (start time differs), then adds every descendant of `root`.
+ * When the root itself has exited, nothing is added: its pid may belong to a stranger now, and the stranger's children are not ours.
+ * Returns the rows to end. `refused` names the pids that are never signalled: the walk does not go below them either (M-2, O-6).
+ */
+function mergeCodexSeen(seen, rows, root, rootGone, refused) {
+    const now = new Map(rows.map((r) => [r.pid, r]));
+    for (const [pid, old] of [...seen]) {
+        const cur = now.get(pid);
+        if (!cur || cur.start !== old.start)
+            seen.delete(pid);
+    }
+    if (!rootGone)
+        for (const d of descendantsOf(rows, root, refused))
+            seen.set(d.pid, d);
+    return [...seen.values()];
+}
+/**
+ * Ends a Codex child's whole tree (Mac and Linux). The order matters:
+ * 1. a snapshot of the descendants (a fresh process list merged with what the turn saw), taken before any signal;
+ * 2. SIGTERM to the process group and to each pid in the snapshot;
+ * 3. after the grace, SIGKILL to the group and to each pid in the snapshot that is still the same process.
+ * A pid that is already gone (ESRCH) is not an error. Never signalled: pid 0 or below, pid 1, the bridge's own pid, the bridge's own group,
+ * and any pid that is not in the snapshot. Known limits: a pid can be reused between the snapshot and the SIGKILL (the start time is checked
+ * again just before it, which narrows that but does not close it); a descendant that starts after the snapshot is missed; one that reparented
+ * before the first look is missed; when the process list cannot be read (it throws, rejects, takes longer than {@link CODEX_TREE_LIST_MS}, or is not a list),
+ * only the group is signalled and this function still resolves.
+ * @param groupPid The Codex child's pid, which is also its process group id. Undefined: no group.
+ * @param seen What the turn saw below the child (may be empty).
+ * @param graceMs Wait between SIGTERM and SIGKILL.
+ * @param deps Signal and list functions. Tests replace them.
+ * @param childExited True when the child has already exited: only what the turn saw is ended, no new descendants are looked up by its pid.
+ * @returns The pids that were in the snapshot.
+ */
+export async function endCodexTree(groupPid, seen, graceMs, deps = {}, childExited = false) {
+    const kill = deps.kill ?? ((pid, sig) => { process.kill(pid, sig); });
+    const ownPid = deps.ownPid ?? process.pid;
+    const ownPgid = deps.ownPgid !== undefined ? deps.ownPgid : ownPgidNow();
+    const source = deps.list ?? codexTreeListSeam ?? (() => listProcs(process.platform));
+    const list = () => readProcsSafely(source, deps.listBoundMs ?? CODEX_TREE_LIST_MS);
+    // What may be signalled is decided by signalablePid. The same test keeps the snapshot walk from going below a pid that is refused.
+    // A Codex descendant can never be the bridge's group leader (that is the bridge or one of its parents), so refusing that number as a pid costs nothing.
+    const okPid = (n) => signalablePid(n, ownPid, ownPgid);
+    const send = (pid, sig) => {
+        try {
+            kill(pid, sig);
+            return true;
+        }
+        catch {
+            return false; /* ESRCH: gone. EPERM: not ours. Neither is an error here. */
+        }
+    };
+    const groupAlive = () => (okPid(groupPid) ? send(-groupPid, 0) : false);
+    const pidAlive = (pid) => {
+        if (!okPid(pid))
+            return false;
+        try {
+            kill(pid, 0);
+            return true;
+        }
+        catch (e) {
+            return e.code === "EPERM";
+        }
+    };
+    const rows0 = await list();
+    const snapshot = new Map();
+    if (rows0 && groupPid !== undefined)
+        for (const r of mergeCodexSeen(seen, rows0, groupPid, childExited, (p) => !okPid(p)))
+            if (okPid(r.pid))
+                snapshot.set(r.pid, r);
+    const members = () => [...snapshot.keys()];
+    const anyAlive = () => groupAlive() || members().some(pidAlive);
+    const waitGone = async (ms) => {
+        const until = Date.now() + ms;
+        while (anyAlive() && Date.now() < until)
+            await new Promise((r) => setTimeout(r, 25));
+        return !anyAlive();
+    };
+    if (!anyAlive())
+        return members();
+    if (okPid(groupPid))
+        send(-groupPid, "SIGTERM");
+    for (const pid of members())
+        send(pid, "SIGTERM");
+    if (await waitGone(graceMs))
+        return members();
+    // Before SIGKILL: only a pid that still has the start time it had in the snapshot. A reused pid is left alone.
+    const rows1 = await list();
+    const still = rows1 ? new Map(rows1.map((r) => [r.pid, r])) : null;
+    if (okPid(groupPid))
+        send(-groupPid, "SIGKILL");
+    for (const [pid, row] of snapshot)
+        if (still?.get(pid)?.start === row.start)
+            send(pid, "SIGKILL");
+    await waitGone(3000);
+    return members();
+}
+/**
+ * Starts the periodic look at a Codex child's descendants (Mac and Linux). The timer does not keep the process alive.
+ * A look that cannot read the list (throws, rejects, hangs past the bound, or returns junk) changes nothing and the next look runs as usual.
+ * @param child The Codex child.
+ * @param deps The list and the timings. Tests replace them.
+ * @returns What the watch keeps, or undefined on Windows or when the child has no pid.
+ */
+export function watchCodexTree(child, deps = {}) {
+    const pid = child.pid;
+    if (process.platform === "win32" || pid === undefined)
+        return undefined;
+    const tree = { seen: new Map(), timer: undefined };
+    let busy = false;
+    tree.timer = setInterval(() => {
+        if (busy)
+            return;
+        busy = true;
+        const source = deps.list ?? codexTreeListSeam ?? (() => listProcs(process.platform));
+        void readProcsSafely(source, deps.boundMs ?? CODEX_TREE_LIST_MS)
+            .then((rows) => { if (rows)
+            mergeCodexSeen(tree.seen, rows, pid, childGone(child), (p) => !signalablePid(p, process.pid, ownPgidNow())); })
+            .catch(() => { })
+            .finally(() => { busy = false; });
+    }, deps.lookMs ?? CODEX_TREE_LOOK_MS);
+    tree.timer.unref();
+    child[CODEX_TREE] = tree;
+    return tree;
+}
+/**
+ * Stops one Codex child. Off Windows the child leads its own process group, and everything below it is ended too ({@link endCodexTree}): a snapshot of its
+ * descendants by parent pid is taken before any signal, then SIGTERM goes to the group and to each pid in the snapshot, and SIGKILL after the grace.
+ * The group is signalled even when the child itself has already exited, because what it started in the background stays in the group.
+ * On Windows, the existing tree kill. A second call for the same child waits for the first.
+ * A grandchild that starts its own session (setsid) leaves the group, but it is ended through the snapshot while it is still below the child or was seen there.
+ * Limits: a pid can be reused between the snapshot and the SIGKILL, a descendant that starts after the snapshot is missed, and one that reparented before the first look is missed.
+ * @param child The Codex child.
+ * @param o Grace, platform, and the Windows taskkill runner. Grace defaults to {@link CODEX_KILL_GRACE_MS}.
+ */
+function stopCodexProcess(child, o = {}) {
+    if (!child)
+        return Promise.resolve();
+    const existing = codexStopJobs.get(child);
+    if (existing)
+        return existing;
+    let finishJob = () => { };
+    const job = new Promise((resolve) => { finishJob = resolve; });
+    // Set before the first await, so a close that races this stop shares the one kill.
+    codexStopJobs.set(child, job);
+    void (async () => {
+        try {
+            const platform = o.platform ?? process.platform;
+            const grace = o.graceMs ?? CODEX_KILL_GRACE_MS;
+            const groupPid = child[GROUP_LEADER];
+            if (platform === "win32") {
+                await killChild(child, o.env ?? process.env, { platform: "win32", execFile: o.execFile });
+                await waitChildGone(child, 5000);
+            }
+            else if (groupPid !== undefined) {
+                // The group and every descendant seen below the child. A pid that is already gone is not an error.
+                const tree = child[CODEX_TREE];
+                await endCodexTree(groupPid, tree?.seen ?? new Map(), grace, o.treeDeps, childGone(child));
+                await waitChildGone(child, 5000);
+            }
+            else if (!childGone(child)) {
+                try {
+                    child.kill("SIGTERM");
+                }
+                catch { /* already gone */ }
+                if (!(await waitChildGone(child, grace))) {
+                    try {
+                        child.kill("SIGKILL");
+                    }
+                    catch { /* already gone */ }
+                    await waitChildGone(child, 5000);
+                }
+            }
+            child.stdin?.destroy();
+            child.stdout?.destroy();
+            child.stderr?.destroy();
+        }
+        finally {
+            const tree = child[CODEX_TREE];
+            if (tree?.timer)
+                clearInterval(tree.timer);
+            finishJob();
+        }
+    })();
+    return job;
+}
+function startCodexProcess(launch, cwd, env) {
+    try {
+        const child = spawn(launch.command, [...launch.prefix, "app-server", ...CODEX_CHAT_FLAGS, ...CODEX_CHAT_OVERRIDES], {
+            cwd,
+            env,
+            stdio: ["pipe", "pipe", "pipe"],
+            windowsHide: true,
+            // Its own process group (off Windows), so ending the turn reaches what Codex started.
+            ...(process.platform !== "win32" ? { detached: true } : {}),
+        });
+        child[CODEX_CHILD] = true;
+        if (process.platform !== "win32" && child.pid !== undefined)
+            child[GROUP_LEADER] = child.pid;
+        watchCodexTree(child);
+        return { rpc: new CodexRpc(child) };
+    }
+    catch (e) {
+        return { error: e?.message ?? String(e) };
+    }
+}
+const CODEX_CLIENT = { clientInfo: { name: "gilb-claude-code-bridge", title: "Gilb Claude Code bridge", version: BRIDGE_VERSION } };
+const CODEX_PROBE_HELLO = { overallMs: 15_000, initializeMs: 12_000, accountMs: 8_000, modelsMs: 8_000 };
+const CODEX_PROBE_CHECK = { overallMs: 20_000, initializeMs: 12_000, accountMs: 8_000, modelsMs: 8_000 };
+/**
+ * The one probe of `codex app-server`: initialize, then account/read, then model/list.
+ * Hello's background check and {@link checkCodexReady} both call this, so the steps and the sentences cannot drift.
+ * Returns null when `stale` is true.
+ * @param launch How to start Codex. Not ok means it was not found, which this function reports as not installed.
+ * @param cwd The child's working folder. The probe reads nothing from it.
+ * @param env The child's environment. {@link codexChildEnv} has already cut it down to the keep list, so no key or secret is in it.
+ * @param hooks Stale check, child hooks, and time limits.
+ * @returns What the probe learned, or null when it was told to stop.
+ */
+async function probeCodexAppServer(launch, cwd, env, hooks = {}) {
+    const limits = hooks.limits ?? CODEX_PROBE_HELLO;
+    const stale = () => hooks.stale?.() === true;
+    const graceMs = hooks.graceMs ?? CODEX_KILL_GRACE_MS;
+    const empty = () => ({ installed: false, version: null, supported: false, account: "unknown", plan: null, models: [], modelsHeld: false, unknownFlag: false, handshook: false, lineTooLong: false });
+    if (stale())
+        return null;
+    // A launch that is not ok is "not installed" for hello, the same as before this function was shared.
+    if (!launch.ok)
+        return empty();
+    let rpc = null;
+    let cap;
+    let version = null;
+    let supported = false;
+    let account = "unknown";
+    let plan = null;
+    let models = [];
+    let modelsHeld = false;
+    let handshook = false;
+    let lineTooLong = false;
+    try {
+        const started = startCodexProcess(launch, cwd, env);
+        if ("error" in started) {
+            if (stale())
+                return null;
+            return { ...empty(), installed: true, startError: `Could not start Codex: ${started.error}` };
+        }
+        rpc = started.rpc;
+        if (stale())
+            return null;
+        hooks.onChild?.(rpc.child);
+        if (stale())
+            return null;
+        rpc.setLineTooLong(() => {
+            lineTooLong = true;
+            if (rpc)
+                void stopCodexProcess(rpc.child, { graceMs });
+        });
+        cap = setTimeout(() => { if (rpc)
+            void stopCodexProcess(rpc.child, { graceMs }); }, limits.overallMs);
+        const init = await rpc.request("initialize", CODEX_CLIENT, limits.initializeMs);
+        if (stale())
+            return null;
+        handshook = true;
+        rpc.notify("initialized", {});
+        version = codexVersionOf(asRecord(init)?.userAgent);
+        supported = !lineTooLong && version !== null && codexOnSupportedLine(version);
+        const accountRes = await rpc.request("account/read", { refreshToken: false }, limits.accountMs);
+        if (stale())
+            return null;
+        const classified = classifyCodexAccount(accountRes);
+        account = classified.kind;
+        plan = classified.plan;
+        try {
+            const parsed = parseCodexModels(await rpc.request("model/list", {}, limits.modelsMs));
+            if (parsed) {
+                models = parsed;
+                modelsHeld = true;
+            }
+        }
+        catch { /* no list yet: a turn's model is checked by shape only */ }
+        if (stale())
+            return null;
+        return { installed: true, version, supported: lineTooLong ? false : supported, account, plan, models, modelsHeld, unknownFlag: false, handshook, lineTooLong };
+    }
+    catch {
+        if (stale() || !rpc)
+            return null;
+        const unknownFlag = !lineTooLong && rpc.stderr().includes("Unknown feature flag");
+        const tail = stderrTail(rpc.stderr());
+        const shownVersion = handshook ? version : null;
+        return {
+            installed: true,
+            version: shownVersion,
+            supported: lineTooLong ? false : supported,
+            account,
+            plan,
+            models,
+            modelsHeld,
+            unknownFlag,
+            handshook,
+            lineTooLong,
+            // No version and no unknown flag and no oversized line: the person sees the start failure, or "timed out" when stderr is empty.
+            ...(!lineTooLong && !unknownFlag && shownVersion === null ? { startError: `Could not start Codex: ${tail || "timed out"}` } : {}),
+        };
+    }
+    finally {
+        if (cap)
+            clearTimeout(cap);
+        if (rpc) {
+            hooks.onDone?.(rpc.child);
+            await stopCodexProcess(rpc.child, { graceMs });
+        }
+    }
+}
+/** The first sentence of a reason, for a banner or an install line that has room for one. The end mark stays. A reason with no sentence end comes back whole, with its white space flattened. */
+function firstSentence(reason) {
+    const flat = reason.replace(/\s+/g, " ").trim();
+    // A bare dot is not a sentence end: paths, file names and version numbers contain dots.
+    const at = flat.search(/[.!?](?=\s|$)/);
+    return at < 0 ? flat : flat.slice(0, at + 1);
+}
+/** Codex billing text. No e-mail address: the account read has one, and it is not shown. */
+function codexBillingLine(plan) {
+    const shown = plan && plan.trim() ? plan.trim() : "unknown";
+    return `ChatGPT subscription, plan ${shown}`;
+}
+/**
+ * Asks Codex whether this computer can run a chat turn: the binary starts, the version is one this bridge knows,
+ * and the account is a ChatGPT sign-in. The same probe as hello, with a 20 second limit. No e-mail address is returned.
+ * @param codexBin The `codex` command, or a path to it.
+ * @param env The bridge's environment. Only the names on the keep list ({@link CODEX_ENV_KEEP}) reach Codex; every other name is dropped.
+ * @param platformOpts How to find and start the binary. Tests pass these.
+ * @returns Ready, with the version and the plan, or not ready, with whether a binary was found and the one sentence to show.
+ */
+export function checkCodexReady(codexBin, env = process.env, platformOpts = {}) {
+    // Spec: Chat.CodexConnect.EitherEngine — one probe, shared with hello, 20 seconds.
+    const launch = resolveCodexLaunch(codexBin, env, platformOpts);
+    if (!launch.ok) {
+        // The not-installed sentence is the only launch failure that means no binary. Any other sentence means one was found.
+        return Promise.resolve({ ok: false, installed: launch.reason !== CODEX_NOT_INSTALLED, reason: launch.reason });
+    }
+    return probeCodexAppServer(launch, os.tmpdir(), codexChildEnv(env, platformOpts.platform, platformOpts.codexKeepEnv), { limits: CODEX_PROBE_CHECK }).then((facts) => {
+        if (!facts)
+            return { ok: false, installed: true, reason: "Could not start Codex: timed out" };
+        const reason = codexHelloReason({
+            installed: true,
+            version: facts.version,
+            supported: facts.lineTooLong || facts.unknownFlag ? false : facts.supported,
+            account: facts.account,
+            unknownFlag: facts.unknownFlag,
+            handshook: facts.handshook,
+            lineTooLong: facts.lineTooLong,
+            ...(facts.startError ? { startError: facts.startError } : {}),
+        });
+        if (reason || !facts.version)
+            return { ok: false, installed: true, reason: reason ?? "Could not start Codex: timed out" };
+        return { ok: true, info: { version: facts.version, plan: facts.plan } };
+    });
+}
+/**
+ * Whether the bridge starts, from the two engine checks. One ready engine is enough.
+ * When neither is ready and Codex is not installed, the message is the Claude reason alone,
+ * so a computer that has no Codex sees the same sentence as before.
+ * @param claude The Claude subscription check.
+ * @param codex The Codex readiness check.
+ * @returns Start, with one billing line per ready engine, or do not start, with the message to print.
+ */
+export function decideStart(claude, codex) {
+    // Spec: Chat.CodexConnect.EitherEngine — start when either engine is ready.
+    if (!claude.ok && !codex.ok) {
+        if (!codex.installed)
+            return { start: false, message: claude.reason };
+        return { start: false, message: `Claude Code: ${claude.reason}\nCodex: ${codex.reason}` };
+    }
+    const billingLines = [];
+    if (claude.ok) {
+        const who = claude.info.email ? ` (${claude.info.email})` : "";
+        billingLines.push(`Claude subscription${who}, plan ${claude.info.subscriptionType}`);
+    }
+    if (codex.ok)
+        billingLines.push(codexBillingLine(codex.info.plan));
+    return { start: true, claudeReady: claude.ok, codexReady: codex.ok, billingLines };
+}
 // ---- preview: serve a project's BUILT app to the person's browser (read-only, loopback only) --------------------------------------
 // The agent builds inside its sandbox (`npm run build`); the bridge never runs a project script outside it. These helpers find the build
 // folder and the pinned port from fixed names, and serve the folder with a small static server in this process. No child process, no CORS.
@@ -3332,8 +4610,12 @@ export function createBridge(opts = {}) {
     let port = opts.port ?? DEFAULT_PORT;
     // How to start claude, worked out once (Windows: never through a shell; a claude that cannot be started safely is refused).
     const launch = resolveClaudeLaunch(claudeBin, env, opts.platformOpts);
+    /** SIGTERM, then SIGKILL, for a Codex child. The Claude path below is unchanged. */
+    const codexKillOpts = () => ({ graceMs: opts.killGraceMs ?? CODEX_KILL_GRACE_MS, platform: opts.platformOpts?.platform, env, execFile: opts.platformOpts?.execFile });
     /** Stops a child (and its group). A tracked code child is looked at first, so what it started is known before the group is gone and its children are re-parented. */
     const stopChild = async (c) => {
+        if (c && c[CODEX_CHILD])
+            return stopCodexProcess(c, codexKillOpts());
         const tr = c?.pid !== undefined ? tracks.get(c.pid) : undefined;
         if (tr && platform !== "win32")
             await Promise.race([snapshotTrack(tr), new Promise((r) => setTimeout(r, 1500).unref())]); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
@@ -4597,6 +5879,9 @@ export function createBridge(opts = {}) {
     /** Runs `claude` once. Resolves { result?, error?, sessionId, model, apiKeyRefused?, bridgeRefused? }. */
     function runClaude(turn, mode, prompt) {
         return new Promise((resolve) => {
+            // The body checks have passed and the stream is already open. No child: a resumed turn must not try Claude again.
+            if (opts.claudeNotReady)
+                return resolve({ error: opts.claudeNotReady, sessionId: mode.sessionId, model: "", bridgeRefused: true });
             const { computer, filesOnly } = turn; // this turn's own copy of the mode
             if (!launch.ok)
                 return resolve({ error: launch.reason, sessionId: mode.sessionId, model: "" });
@@ -4794,6 +6079,548 @@ export function createBridge(opts = {}) {
             child.stdin.end(turn.images.length > 0 ? imageStdin(turn.images, prompt) : prompt);
         });
     }
+    let codexCache = null;
+    let codexChecking = false;
+    let probeChild = null;
+    let probeGen = 0;
+    let codexLaunchMemo;
+    // A library caller that does not name a binary must not start the real app-server. The command line always passes one.
+    const codexWanted = typeof opts.codexBin === "string" && opts.codexBin.length > 0;
+    /** A successful lookup, kept so the next turn does not search again. A miss is not kept: Codex installed later is found on the next look. Absent `codexBin`: not installed, and nothing is spawned. */
+    const getCodexLaunch = () => {
+        if (!codexWanted)
+            return { ok: false, reason: CODEX_NOT_INSTALLED };
+        if (codexLaunchMemo?.ok)
+            return codexLaunchMemo;
+        const next = resolveCodexLaunch(opts.codexBin, env, { ...(opts.platformOpts ?? {}), home });
+        if (next.ok)
+            codexLaunchMemo = next;
+        return next;
+    };
+    const rememberProbe = (s) => {
+        const supported = s.lineTooLong || s.unknownFlag ? false : s.supported;
+        const reason = codexHelloReason({ installed: s.installed, version: s.version, supported, account: s.account, unknownFlag: s.unknownFlag, handshook: s.handshook, lineTooLong: s.lineTooLong, ...(s.startError ? { startError: s.startError } : {}) });
+        const next = { installed: s.installed, version: s.version, supported, account: s.account, plan: s.plan, models: s.models, modelsHeld: s.modelsHeld, at: now() };
+        if (reason)
+            next.reason = reason;
+        codexCache = next;
+    };
+    /** Codex children still alive. A turn drops `turn.child` when it finishes, before the kill has completed, so close waits on this set. */
+    const codexLive = new Set();
+    const watchCodex = (child) => {
+        codexLive.add(child);
+        child.on("exit", () => { codexLive.delete(child); });
+    };
+    // Node's stream types in this tsconfig share no fields with `{ unref }`, so the cast is the only way to drop the ref.
+    const unrefStream = (s) => { try {
+        s?.unref?.();
+    }
+    catch { /* a stream that cannot leave the loop is still closed on stop */ } };
+    /** Asks Codex who is signed in and which models it has. Hello never waits for this. One probe at a time. The steps are {@link probeCodexAppServer}. */
+    async function runCodexProbeBody(gen) {
+        // A close bumps the generation. A probe that notices it must not write a "Codex failed" cache from its own kill.
+        const stale = () => gen !== probeGen || bridgeClosing;
+        try {
+            const facts = await probeCodexAppServer(getCodexLaunch(), workDir, codexChildEnv(env, opts.platformOpts?.platform, opts.platformOpts?.codexKeepEnv), {
+                stale,
+                limits: CODEX_PROBE_HELLO,
+                graceMs: opts.killGraceMs ?? CODEX_KILL_GRACE_MS,
+                onChild: (child) => {
+                    probeChild = child;
+                    watchCodex(child);
+                    // The probe is not a turn. It must not keep the process, or a test suite, alive after close.
+                    child.unref();
+                    unrefStream(child.stdin);
+                    unrefStream(child.stdout);
+                    unrefStream(child.stderr);
+                },
+                onDone: (child) => {
+                    if (probeChild === child)
+                        probeChild = null;
+                },
+            });
+            if (facts)
+                rememberProbe(facts);
+        }
+        finally {
+            codexChecking = false;
+        }
+    }
+    function startCodexProbe() {
+        if (!codexWanted || codexChecking || bridgeClosing)
+            return;
+        codexChecking = true;
+        const gen = ++probeGen;
+        void runCodexProbeBody(gen);
+    }
+    /** A paired hello refreshes a result older than 30 s. It does not wait. */
+    function refreshCodexProbe() {
+        const age = codexCache ? now() - codexCache.at : Number.POSITIVE_INFINITY;
+        if (age > 30_000)
+            startCodexProbe();
+    }
+    function stopCodexProbe() {
+        probeGen += 1;
+        const c = probeChild;
+        probeChild = null;
+        if (!c)
+            return Promise.resolve();
+        return stopCodexProcess(c, codexKillOpts());
+    }
+    /** Close waits until the in-flight probe has dropped its timers. Bounded, so a stuck child cannot hold the bridge open. */
+    function waitProbeDone() {
+        if (!codexChecking)
+            return Promise.resolve();
+        return new Promise((resolve) => {
+            let timer;
+            const cap = setTimeout(() => { clearInterval(timer); resolve(); }, 2000);
+            timer = setInterval(() => {
+                if (!codexChecking) {
+                    clearInterval(timer);
+                    clearTimeout(cap);
+                    resolve();
+                }
+            }, 20);
+        });
+    }
+    /** A Codex model: the shape, not a Claude name, and one of the probed list once the bridge holds that list. */
+    function codexModelAllowed(m) {
+        if (typeof m !== "string" || !CODEX_MODEL_RE.test(m) || m.startsWith("claude-"))
+            return false;
+        if (codexCache?.modelsHeld)
+            return codexCache.models.some((row) => row.id === m);
+        return true;
+    }
+    function enginesHello() {
+        const c = codexCache;
+        const installed = codexWanted && (c?.installed ?? false);
+        const supported = codexWanted && (c?.supported ?? false);
+        const account = codexWanted ? (c?.account ?? "unknown") : "unknown";
+        const codex = {
+            id: "codex", name: "Codex", installed, version: codexWanted ? (c?.version ?? null) : null, supported, account,
+            ready: installed && supported && account === "chatgpt", billing: "chatgpt-subscription",
+            models: codexWanted ? (c?.models ?? []) : [], efforts: [...CODEX_EFFORTS], codeTurns: false, images: false, delegateCoding: false,
+        };
+        if (codexWanted && codexChecking)
+            codex.checking = true;
+        // No binary was asked for: the same sentence as a missing install, and no probe is ever started.
+        if (!codexWanted)
+            codex.reason = CODEX_NOT_INSTALLED;
+        else if (c?.reason)
+            codex.reason = c.reason;
+        // Absent claudeNotReady: this object is the one hello has always returned. No `reason` key is added.
+        const claude = { id: "claude", name: "Claude Code", ready: true, billing: "claude-subscription", models: MODEL_ALIASES.map((id) => ({ id, label: id })), efforts: [...EFFORTS], codeTurns: true, images: true, delegateCoding: true };
+        if (opts.claudeNotReady) {
+            claude.ready = false;
+            claude.reason = opts.claudeNotReady;
+        }
+        return [claude, codex];
+    }
+    /** Runs one Codex chat turn. Resolves the same shape as {@link runClaude}, plus `codexUsage` when the counts are usable. */
+    function runCodex(turn, mode, prompt) {
+        return new Promise((resolve) => {
+            const launch = getCodexLaunch();
+            if (!launch.ok)
+                return resolve({ error: launch.reason, sessionId: mode.sessionId, model: "" });
+            const started = startCodexProcess(launch, workDir, codexChildEnv(env, opts.platformOpts?.platform, opts.platformOpts?.codexKeepEnv));
+            if ("error" in started)
+                return resolve({ error: `Could not start Codex: ${started.error}`, sessionId: mode.sessionId, model: "" });
+            const rpc = started.rpc;
+            turn.child = rpc.child;
+            watchCodex(rpc.child);
+            const idleMs = opts.codexIdleMs ?? CODEX_IDLE_MS;
+            const turnMaxMs = opts.codexTurnMaxMs ?? CODEX_TURN_MAX_MS;
+            let settled = false;
+            let handshook = false;
+            let threadId = "";
+            let model = "";
+            let gilbReady = false;
+            let sawAgent = false;
+            let stopReason = null;
+            let lastAny = "";
+            let lastFinal = "";
+            let sawFinal = false;
+            let usageRaw;
+            let idleTimer;
+            let maxTimer;
+            // A binding assigned only inside onNotification stays `null` to the checker after an await, so the status lives on a holder.
+            const doneBox = { turn: null };
+            let wake = null;
+            const poke = () => { wake?.(); };
+            const clearLimits = () => {
+                if (idleTimer)
+                    clearTimeout(idleTimer);
+                if (maxTimer)
+                    clearTimeout(maxTimer);
+                idleTimer = undefined;
+                maxTimer = undefined;
+            };
+            const finish = (out) => {
+                if (settled)
+                    return;
+                settled = true;
+                clearLimits();
+                turn.child = null;
+                for (const pid of [...turn.pending.keys()])
+                    cancelCall(turn, pid);
+                poke();
+                resolve(out);
+            };
+            const stop = () => { try {
+                void stopChild(rpc.child);
+            }
+            catch { /* already gone */ } };
+            // No line at all for idleMs. A relayed tool result is not a line from the child, so it does not reset this.
+            const armIdle = () => {
+                if (settled)
+                    return;
+                if (idleTimer)
+                    clearTimeout(idleTimer);
+                idleTimer = setTimeout(() => {
+                    if (settled)
+                        return;
+                    finish({ error: CODEX_IDLE_MSG, sessionId: threadId || mode.sessionId, model });
+                    stop();
+                }, idleMs);
+            };
+            const armMax = () => {
+                if (settled || maxTimer)
+                    return;
+                maxTimer = setTimeout(() => {
+                    if (settled)
+                        return;
+                    finish({ error: CODEX_IDLE_MSG, sessionId: threadId || mode.sessionId, model });
+                    stop();
+                }, turnMaxMs);
+            };
+            const failStopped = () => {
+                if (!stopReason)
+                    return false;
+                if (stopReason.kind === "account") {
+                    log(`codex account notice stopped the turn (${stopReason.detail})`);
+                    finish({ error: CODEX_UNREADABLE_MSG, sessionId: threadId || mode.sessionId, model, apiKeyRefused: true });
+                }
+                else if (stopReason.kind === "guard") {
+                    log(`codex item guard stopped the turn (${stopReason.detail})`);
+                    finish({ error: CODEX_GUARD_MSG, sessionId: threadId || mode.sessionId, model, bridgeRefused: true });
+                }
+                else {
+                    log(`codex did not start with only this chat's tools (${stopReason.detail})`);
+                    finish({ error: CODEX_LIMITS_MSG, sessionId: threadId || mode.sessionId, model, bridgeRefused: true });
+                }
+                stop();
+                return true;
+            };
+            const waitFor = (pred, ms) => {
+                if (pred())
+                    return Promise.resolve(true);
+                return new Promise((done) => {
+                    const timer = setTimeout(() => { wake = null; done(false); }, ms);
+                    wake = () => {
+                        if (!pred())
+                            return;
+                        clearTimeout(timer);
+                        wake = null;
+                        done(true);
+                    };
+                });
+            };
+            const seenAsk = new Set();
+            rpc.onServerRequest((method, id) => {
+                // A chat turn is not asked anything. Decline the two approval methods the probe saw Codex send; refuse the rest.
+                if (!seenAsk.has(method)) {
+                    seenAsk.add(method);
+                    log(`codex asked ${method}`);
+                }
+                if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval")
+                    rpc.respond(id, { decision: "decline" });
+                else if (method === "mcpServer/elicitation/request")
+                    rpc.respond(id, { action: "decline", content: null, _meta: null });
+                else
+                    rpc.respondError(id, -32601, "Not supported by this bridge.");
+            });
+            rpc.onNotification((method, params) => {
+                if (method === "mcpServer/startupStatus/updated") {
+                    const name = typeof params.name === "string" ? params.name : "";
+                    const status = params.status;
+                    // Any thread, any time: a server other than gilb starting is the person's own tools coming in.
+                    if (!stopReason && name !== "gilb" && (status === "starting" || status === "ready"))
+                        stopReason = { kind: "foreign", detail: `server ${name || "unnamed"} ${String(status)}` };
+                    if (name === "gilb" && status === "ready")
+                        gilbReady = true;
+                    if (!stopReason && name === "gilb" && status === "failed")
+                        stopReason = { kind: "foreign", detail: "gilb failed" };
+                }
+                // The account is read once, before the thread starts. A later notice that does not say ChatGPT ends the turn,
+                // because a sign-in changed in the middle (a logout, or an API key) must not keep running under the first check.
+                // Only the exact word codexAccountUpdateKeeps accepts passes; a missing or odd field is not "still ChatGPT".
+                if (method === "account/updated" && !stopReason && !codexAccountUpdateKeeps(params))
+                    stopReason = { kind: "account", detail: "account/updated" };
+                // One guard for every notification that carries an item, from the moment this turn's thread exists.
+                // A sub-agent's shell is still a shell. The type name is compared exactly as Codex writes it, against an allow list.
+                if (threadId !== "") {
+                    const blocked = codexBlockedItem(params);
+                    if (!stopReason && blocked)
+                        stopReason = { kind: "guard", detail: blocked };
+                }
+                const own = threadId !== "" && params.threadId === threadId;
+                if (own && method === "item/completed") {
+                    const item = asRecord(params.item);
+                    if (item?.type === "agentMessage" && typeof item.text === "string") {
+                        sawAgent = true;
+                        lastAny = item.text;
+                        if (item.phase === "final_answer") {
+                            lastFinal = item.text;
+                            sawFinal = true;
+                        }
+                    }
+                }
+                if (own && method === "thread/tokenUsage/updated")
+                    usageRaw = params.tokenUsage;
+                if (own && method === "turn/completed") {
+                    const done = asRecord(params.turn);
+                    doneBox.turn = { status: typeof done?.status === "string" ? done.status : "", error: done?.error ?? null };
+                }
+                // A stop item while turn/start is still unanswered must end the turn now, not when that request times out.
+                if (stopReason)
+                    failStopped();
+                poke();
+            });
+            rpc.setActivity(() => armIdle());
+            rpc.setLineTooLong(() => {
+                if (settled)
+                    return;
+                finish({ error: CODEX_LINE_TURN, sessionId: threadId || mode.sessionId, model });
+                stop();
+            });
+            armIdle();
+            rpc.child.on("close", () => {
+                poke();
+                // Codex may have started something in the background: the turn is over, so its group is ended too.
+                stop();
+                if (settled)
+                    return;
+                const tail = stderrTail(rpc.stderr());
+                if (!handshook && rpc.stderr().includes("Unknown feature flag")) {
+                    finish({ error: CODEX_UNKNOWN_TURN, sessionId: mode.sessionId, model: "" });
+                    return;
+                }
+                if (!handshook) {
+                    finish({ error: `Could not start Codex: ${tail || "the app-server exited"}`.slice(0, 500), sessionId: mode.sessionId, model: "" });
+                    return;
+                }
+                finish({ error: `Codex stopped without an answer.${tail ? ` ${tail}` : ""}`, sessionId: threadId || mode.sessionId, model });
+            });
+            void (async () => {
+                try {
+                    const init = await rpc.request("initialize", CODEX_CLIENT, 20_000);
+                    if (settled)
+                        return;
+                    handshook = true;
+                    rpc.notify("initialized", {});
+                    const version = codexVersionOf(asRecord(init)?.userAgent);
+                    if (!version) {
+                        finish({ error: CODEX_UNREADABLE_VERSION_TURN, sessionId: mode.sessionId, model: "", bridgeRefused: true });
+                        stop();
+                        return;
+                    }
+                    if (!codexOnSupportedLine(version)) {
+                        // Newer than the tested line uses the not-supported sentence. Older keeps the too-old sentence.
+                        const newer = codexVersionAtLeast(version, `${CODEX_SUPPORTED_LINE}.0`);
+                        finish({ error: newer ? CODEX_UNKNOWN_HELLO : CODEX_TOO_OLD, sessionId: mode.sessionId, model: "", bridgeRefused: true });
+                        stop();
+                        return;
+                    }
+                    if (failStopped())
+                        return;
+                    let accountResult;
+                    try {
+                        accountResult = await rpc.request("account/read", { refreshToken: false }, 20_000);
+                    }
+                    catch {
+                        if (settled)
+                            return;
+                        finish({ error: CODEX_UNREADABLE_MSG, sessionId: mode.sessionId, model: "", apiKeyRefused: true });
+                        stop();
+                        return;
+                    }
+                    if (settled)
+                        return;
+                    const refusal = codexAccountRefusal(classifyCodexAccount(accountResult).kind);
+                    if (refusal) {
+                        finish({ error: refusal, sessionId: mode.sessionId, model: "", apiKeyRefused: true });
+                        stop();
+                        return;
+                    }
+                    if (failStopped())
+                        return;
+                    let names;
+                    try {
+                        names = codexConfigServers(await rpc.request("config/read", { includeLayers: false }, 20_000));
+                    }
+                    catch {
+                        names = null;
+                    }
+                    if (settled)
+                        return;
+                    if (!names) {
+                        finish({ error: CODEX_CONFIG_MSG, sessionId: mode.sessionId, model: "", bridgeRefused: true });
+                        stop();
+                        return;
+                    }
+                    if (failStopped())
+                        return;
+                    const config = codexThreadConfig(names, `http://127.0.0.1:${port}/mcp/${turn.id}/${turn.mcpToken}`);
+                    const base = {
+                        cwd: workDir, approvalPolicy: "never", sandbox: "read-only", developerInstructions: codexDeveloperInstructions(turn.system), config,
+                        ...(turn.model ? { model: turn.model } : {}),
+                    };
+                    let threadResult;
+                    try {
+                        threadResult = mode.resume
+                            ? await rpc.request("thread/resume", { ...base, threadId: mode.sessionId }, 20_000)
+                            : await rpc.request("thread/start", { ...base, ephemeral: false }, 20_000);
+                    }
+                    catch (e) {
+                        if (settled)
+                            return;
+                        // Only a refused thread/resume is retried. A timeout or a dead child is final. A new thread that fails is not retried.
+                        const resumeFailed = mode.resume && e instanceof CodexCallError && e.kind === "rpc";
+                        finish(mode.resume
+                            ? { error: CODEX_RESUME_MSG, sessionId: mode.sessionId, model: "", ...(resumeFailed ? { resumeFailed: true } : {}) }
+                            : { error: "Could not start Codex: the thread did not start.", sessionId: mode.sessionId, model: "" });
+                        stop();
+                        return;
+                    }
+                    if (settled)
+                        return;
+                    const thread = parseCodexThread(threadResult);
+                    if (!thread || !UUID.test(thread.id)) {
+                        finish(mode.resume
+                            ? { error: CODEX_RESUME_MSG, sessionId: mode.sessionId, model: "" }
+                            : { error: "Could not start Codex: the thread did not start.", sessionId: mode.sessionId, model: "" });
+                        stop();
+                        return;
+                    }
+                    threadId = thread.id;
+                    model = thread.model;
+                    if (thread.modelProvider !== "openai") {
+                        finish({ error: CODEX_PROVIDER_MSG, sessionId: threadId, model, bridgeRefused: true });
+                        stop();
+                        return;
+                    }
+                    if (failStopped())
+                        return;
+                    if (thread.approvalPolicy !== "never" || thread.sandboxType !== "readOnly") {
+                        log(`codex did not start with only this chat's tools (approvalPolicy ${String(thread.approvalPolicy)}, sandbox ${String(thread.sandboxType)})`);
+                        finish({ error: CODEX_LIMITS_MSG, sessionId: threadId, model, bridgeRefused: true });
+                        stop();
+                        return;
+                    }
+                    if (turn.tools.length > 0) {
+                        await waitFor(() => gilbReady || stopReason !== null || rpc.hasExited(), 30_000);
+                        if (settled)
+                            return;
+                        if (failStopped())
+                            return;
+                        if (!gilbReady) {
+                            log("codex did not start with only this chat's tools (gilb was not ready)");
+                            finish({ error: CODEX_LIMITS_MSG, sessionId: threadId, model, bridgeRefused: true });
+                            stop();
+                            return;
+                        }
+                    }
+                    if (failStopped())
+                        return;
+                    let servers;
+                    try {
+                        servers = parseCodexServers(await rpc.request("mcpServerStatus/list", { threadId }, 20_000));
+                    }
+                    catch {
+                        servers = null;
+                    }
+                    if (settled)
+                        return;
+                    const why = codexServersRefusal(servers, turn.tools.map((t) => t.name));
+                    if (why || !servers) {
+                        log(`codex did not start with only this chat's tools (${why ?? "the server list could not be read"})`);
+                        finish({ error: CODEX_LIMITS_MSG, sessionId: threadId, model, bridgeRefused: true });
+                        stop();
+                        return;
+                    }
+                    const gilb = servers.find((s) => s.name === "gilb");
+                    if (!gilb) {
+                        log("codex did not start with only this chat's tools (gilb was not the one server)");
+                        finish({ error: CODEX_LIMITS_MSG, sessionId: threadId, model, bridgeRefused: true });
+                        stop();
+                        return;
+                    }
+                    if (failStopped())
+                        return;
+                    turn.send("status", { engine: "codex", account: "chatgpt", tools: gilb.tools, mcpServers: servers.map((s) => ({ name: s.name, tools: s.tools.length })), model });
+                    try {
+                        armMax();
+                        await rpc.request("turn/start", {
+                            threadId,
+                            input: [{ type: "text", text: prompt, text_elements: [] }],
+                            ...(turn.model ? { model: turn.model } : {}),
+                            ...(turn.effort ? { effort: turn.effort } : {}),
+                        }, 20_000);
+                    }
+                    catch (e) {
+                        if (settled)
+                            return;
+                        const reason = e instanceof Error ? e.message : "the turn did not start";
+                        finish({ error: `Could not start Codex: ${reason}`.slice(0, 500), sessionId: threadId, model });
+                        stop();
+                        return;
+                    }
+                    if (settled || failStopped())
+                        return;
+                    const ended = await waitFor(() => doneBox.turn !== null || stopReason !== null || settled || rpc.hasExited(), turnMaxMs);
+                    if (settled || failStopped())
+                        return;
+                    const completed = doneBox.turn;
+                    if (!ended || !completed) {
+                        finish({ error: CODEX_IDLE_MSG, sessionId: threadId, model });
+                        stop();
+                        return;
+                    }
+                    if (completed.status === "completed") {
+                        if (!sawAgent) {
+                            finish({ error: "Codex gave no answer.", sessionId: threadId, model });
+                        }
+                        else {
+                            const answer = sawFinal ? lastFinal : lastAny;
+                            const usage = codexTurnUsage(usageRaw, model);
+                            finish({ result: { type: "result", result: answer, is_error: false, num_turns: 1 }, sessionId: threadId, model, ...(usage ? { codexUsage: usage } : {}) });
+                        }
+                    }
+                    else if (completed.status === "failed") {
+                        const errObj = asRecord(completed.error);
+                        const message = typeof errObj?.message === "string" ? errObj.message : "the turn failed";
+                        finish({ error: errObj?.codexErrorInfo === "usageLimitExceeded" ? "Your ChatGPT plan has reached its Codex limit. Try again later." : `Codex: ${message.slice(0, 500)}`, sessionId: threadId, model });
+                    }
+                    else {
+                        finish({ error: "Codex stopped without an answer.", sessionId: threadId, model });
+                    }
+                    stop();
+                }
+                catch (e) {
+                    if (settled)
+                        return;
+                    const tail = stderrTail(rpc.stderr());
+                    if (!handshook && rpc.stderr().includes("Unknown feature flag"))
+                        finish({ error: CODEX_UNKNOWN_TURN, sessionId: mode.sessionId, model: "" });
+                    else if (!handshook)
+                        finish({ error: `Could not start Codex: ${tail || (e instanceof Error ? e.message : "the app-server stopped")}`.slice(0, 500), sessionId: mode.sessionId, model: "" });
+                    else
+                        finish({ error: `Codex stopped without an answer.${tail ? ` ${tail}` : ""}`, sessionId: threadId || mode.sessionId, model });
+                    stop();
+                }
+            })();
+        });
+    }
     /** While the bridge updates itself (or is about to restart after it) no turn may start: its claude child would be cut off or orphaned. */
     const updating = () => isUpdateRunning() || restartPending;
     const UPDATING = { error: "The bridge is updating. Send your message again in a minute.", code: "UpdateRunning" };
@@ -4821,14 +6648,40 @@ export function createBridge(opts = {}) {
         // An id from the page is a string or nothing; any other shape is a bad request (never turned into text, which can throw).
         if (body.parentTurnId !== undefined && typeof body.parentTurnId !== "string")
             return json(res, 400, { error: BAD_REQUEST });
-        // The model and the effort the person chose (chat and code turns); delegateCoding is for code turns only.
-        if (body.model !== undefined && !modelAllowed(body.model))
-            return json(res, 400, { error: "That model is not allowed." });
-        if (body.effort !== undefined && !effortAllowed(body.effort))
-            return json(res, 400, { error: "That effort is not allowed." });
-        if (body.delegateCoding !== undefined && (typeof body.delegateCoding !== "boolean" || (body.mode !== "code" && body.delegateCoding)))
-            return json(res, 400, { error: typeof body.delegateCoding === "boolean" ? "delegateCoding is only for code turns." : BAD_REQUEST });
+        // An engine the bridge does not know is refused before any model check, so a typo never starts a child.
+        if (body.engine !== undefined && body.engine !== "claude" && body.engine !== "codex")
+            return json(res, 400, { error: "That engine is not known." });
         const me = callerKey(req);
+        // A usable parent decides the engine. The full hand-off checks stay below, so a missing parent is still 404 in the same place.
+        const hinted = typeof body.parentTurnId === "string" && body.parentTurnId ? turns.get(body.parentTurnId) : undefined;
+        const engineParent = hinted && !hinted.closed && !hinted.cancelRequested && hinted.owner === me ? hinted : null;
+        if (engineParent && body.engine !== undefined && body.engine !== engineParent.engine)
+            return json(res, 400, { error: "A hand-off runs on its turn's engine." });
+        const engine = engineParent ? engineParent.engine : body.engine === "codex" ? "codex" : "claude";
+        if (engine === "codex") {
+            // Codex checks, in this order, after the shape checks and before any child. Claude's model list does not apply here.
+            if (body.mode === "code")
+                return json(res, 400, { error: "Codex cannot run code turns on this bridge yet.", code: "EngineNoCodeTurns" });
+            if (imgCheck.images.length > 0)
+                return json(res, 400, { error: "Codex cannot take pictures on this bridge yet." });
+            if (body.delegateCoding === true)
+                return json(res, 400, { error: "delegateCoding is only for Claude Code." });
+            if (body.delegateCoding !== undefined && typeof body.delegateCoding !== "boolean")
+                return json(res, 400, { error: BAD_REQUEST });
+            if (body.model !== undefined && !codexModelAllowed(body.model))
+                return json(res, 400, { error: "That model is not allowed." });
+            if (body.effort !== undefined && (typeof body.effort !== "string" || !CODEX_EFFORTS.includes(body.effort)))
+                return json(res, 400, { error: "That effort is not allowed." });
+        }
+        else {
+            // The model and the effort the person chose (chat and code turns); delegateCoding is for code turns only.
+            if (body.model !== undefined && !modelAllowed(body.model))
+                return json(res, 400, { error: "That model is not allowed." });
+            if (body.effort !== undefined && !effortAllowed(body.effort))
+                return json(res, 400, { error: "That effort is not allowed." });
+            if (body.delegateCoding !== undefined && (typeof body.delegateCoding !== "boolean" || (body.mode !== "code" && body.delegateCoding)))
+                return json(res, 400, { error: typeof body.delegateCoding === "boolean" ? "delegateCoding is only for code turns." : BAD_REQUEST });
+        }
         const isCode = body.mode === "code";
         let proj = null;
         if (isCode) {
@@ -4950,6 +6803,7 @@ export function createBridge(opts = {}) {
             approval: isCode && body.approval === "each-write" ? "each-write" : "session",
             approvals: new Map(),
             webTurnGrant: false,
+            engine,
             owner: me,
             startedAt: now(),
             lastActivityAt: now(),
@@ -5027,23 +6881,43 @@ export function createBridge(opts = {}) {
             // A resumed session already holds the thread. A new one is given the earlier turns as text.
             const history = !parent && typeof body.history === "string" ? body.history.slice(0, 60000) : "";
             const freshPrompt = history ? `Earlier in this conversation:\n${history}\n\nThe person's new message:\n${prompt}` : prompt;
+            // The Codex result's session id is the thread Codex returned, not the id we made up.
+            // Claude still retries any failed resume. Codex retries only when thread/resume itself was refused.
+            const run = (m, text) => (turn.engine === "codex" ? runCodex(turn, m, text) : runClaude(turn, m, text));
             let sessionId = resumeId || crypto.randomUUID();
-            let out = await runClaude(turn, { sessionId, resume: Boolean(resumeId) }, resumeId ? prompt : freshPrompt);
-            // A turn the bridge itself refused is not retried: a retry would hide the true reason and run Claude Code again after a safety refusal.
-            if (resumeId && (out.error || out.result?.num_turns === 0) && !out.apiKeyRefused && !out.bridgeRefused && !turn.closed && !turn.cancelRequested) {
+            let out = await run({ sessionId, resume: Boolean(resumeId) }, resumeId ? prompt : freshPrompt);
+            const claudeRetry = turn.engine !== "codex" && resumeId && (out.error || out.result?.num_turns === 0) && !out.apiKeyRefused && !out.bridgeRefused && !turn.closed && !turn.cancelRequested;
+            const codexRetry = turn.engine === "codex" && !!resumeId && out.resumeFailed === true && !turn.closed && !turn.cancelRequested;
+            if (claudeRetry || codexRetry) {
                 // The session is gone (different folder, cleaned up): start a new one with the thread as text.
                 sessionId = crypto.randomUUID();
-                out = await runClaude(turn, { sessionId, resume: false }, freshPrompt);
+                out = await run({ sessionId, resume: false }, freshPrompt);
             }
             sendFilesChanged();
             if (turn.cancelRequested) {
                 send("error", { message: "The turn was cancelled." });
             }
             else if (out.error || !out.result) {
-                send("error", { message: out.error ?? "Claude Code gave no answer." });
+                send("error", { message: out.error ?? (turn.engine === "codex" ? "Codex gave no answer." : "Claude Code gave no answer.") });
             }
             else if (out.result.is_error) {
-                send("error", { message: `Claude Code: ${String(out.result.result ?? "the turn failed").slice(0, 500)}` });
+                const who = turn.engine === "codex" ? "Codex" : "Claude Code";
+                send("error", { message: `${who}: ${String(out.result.result ?? "the turn failed").slice(0, 500)}` });
+            }
+            else if (turn.engine === "codex") {
+                // Usage is only for the person's turn. It was already checked inside runCodex. A hand-off's message leaves it out.
+                const usage = parent ? undefined : out.codexUsage;
+                send("message", {
+                    role: "assistant",
+                    content: String(out.result.result ?? ""),
+                    model: out.model,
+                    ...(turn.effort ? { effort: turn.effort } : {}),
+                    payer: "person-codex",
+                    engine: "codex",
+                    sessionId: out.sessionId,
+                    ...(usage ? { usage } : {}),
+                    ...(turn.budgetSpent ? { budgetSpent: true } : {}),
+                });
             }
             else {
                 // Usage is only for the person's turn. A hand-off already sends its own message; that message stays as it was.
@@ -5913,9 +7787,12 @@ export function createBridge(opts = {}) {
         if (req.method === "GET" && url.pathname === "/v1/hello") {
             const paired = hasSecret(req, origin);
             // The next use after code mode was switched off: check the saved folder again (a paired caller only, so an unpaired hello does no work on disk).
-            if (paired)
+            // A paired hello also refreshes the Codex probe when the cache is old. It does not wait for that probe.
+            if (paired) {
                 recheckSavedFolder();
-            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, ...(paired && !workspace && codeOff && savedFolder ? { codeModeOff: { reason: codeOff.reasonCode, message: codeOff.sentence, folderName: savedFolder.name } } : {}), codeMode: workspace ? (filesOnlyFor(accessMode) ? "files-only" : "full") : null, access: workspace ? accessMode : null, options: { ...(accessMode === "computer" && codePlatform !== "win32" ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnlyFor(accessMode) ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(hasSecret(req, origin) ? { update: await updateHello(), access: accessMode, accessChangeable: true, accessSource, ...(accessUnsaved ? { accessSaveFailed: true } : {}) } : {}) });
+                refreshCodexProbe();
+            }
+            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, ...(paired && !workspace && codeOff && savedFolder ? { codeModeOff: { reason: codeOff.reasonCode, message: codeOff.sentence, folderName: savedFolder.name } } : {}), codeMode: workspace ? (filesOnlyFor(accessMode) ? "files-only" : "full") : null, access: workspace ? accessMode : null, options: { ...(accessMode === "computer" && codePlatform !== "win32" ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnlyFor(accessMode) ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(paired ? { update: await updateHello(), access: accessMode, accessChangeable: true, accessSource, ...(accessUnsaved ? { accessSaveFailed: true } : {}), engines: enginesHello() } : {}) });
         }
         if (req.method === "POST" && url.pathname === "/v1/pair") {
             let body;
@@ -6183,9 +8060,11 @@ export function createBridge(opts = {}) {
         lockHeld = false;
     };
     const closeBridge = () => {
-        bridgeClosing = true; // from here no preview starts, even on a connection that is still open
+        bridgeClosing = true; // from here no preview starts, even on a connection that is still open, and the Codex probe must not start again
+        const probeStopped = stopCodexProbe().then(() => waitProbeDone());
         const previewsClosed = closeAllPreviews();
-        const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => previewsClosed);
+        // codexLive still holds a child whose turn already dropped turn.child. Close waits until those pids are gone.
+        const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)), [...codexLive].map((c) => stopCodexProcess(c, codexKillOpts())))).then(() => killAllTracked()).then(() => previewsClosed).then(() => probeStopped);
         return stopped.then(() => new Promise((resolve) => server.close(() => { releaseLock(); resolve(); })));
     };
     const server = http.createServer((req, res) => {
@@ -6231,6 +8110,8 @@ export function createBridge(opts = {}) {
                         // The folder is ours and so is the port: stop exactly what an earlier run recorded.
                         sweepLeftovers().then(() => resolve(port), () => resolve(port));
                         recordLockStart();
+                        // Hello never waits for this. It asks Codex, once, who is signed in and which models it has.
+                        startCodexProbe();
                     });
                 });
             }
@@ -6299,6 +8180,7 @@ export function parseCli(argv) {
         mode: modes.length === 0 ? "run" : modes[0].replace(/^-+/, "") === "h" ? "help" : modes[0] === "--unpair-all" ? "unpairAll" : modes[0] === "--access-reset" ? "accessReset" : modes[0].replace(/^-+/, ""),
         modes,
         claude: val("--claude"),
+        codex: val("--codex"),
         port: val("--port") === undefined ? undefined : Number(val("--port")),
         allowOrigins: valAll("--allow-origin"),
         allowOrigin: val("--allow-origin"),
@@ -6309,6 +8191,16 @@ export function parseCli(argv) {
         /** `--access folder`: lowers the saved mode (never raises it). Every value given is checked: the first that is not "folder" is kept here so main() and --install refuse it. */
         access: ((all) => all.find((v) => v !== "folder") ?? all[0])(valAll("--access")),
     };
+}
+/**
+ * The Codex binary the command line passes into {@link createBridge}.
+ * No `--codex` flag means the name `codex`, so a bridge started from the command line always looks for Codex.
+ * `createBridge` itself does not: it uses Codex only when `codexBin` is a non-empty string.
+ * @param cli The object {@link parseCli} returned.
+ * @returns The `codexBin` option.
+ */
+export function codexBinOption(cli) {
+    return { codexBin: cli.codex ?? "codex" };
 }
 const xmlEsc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 /** The LaunchAgent plist text. Absolute node and bridge paths, the PATH that finds `claude`, always on, one log file. */
@@ -6414,9 +8306,59 @@ const serviceFiles = (opts, home, platform = process.platform) => {
         pairingsFile: path.join(stateDir, "pairings.json"),
     };
 };
+/** Today's refusal when `claude` cannot be found. Kept as its own sentence so a computer with no Codex still sees it unchanged. */
+const CLAUDE_NOT_FOUND_INSTALL = "Claude Code (`claude`) was not found. Install it and run `claude auth login`, then run --install again.";
+/** The arguments `--install` records. `--codex` sits after `--claude` when that binary was found, and is left out when it was not. */
+function serviceEngineArgs(port, stateDir, claudeBin, codexBin, extraOrigins, workspace) {
+    const args = ["--port", String(port)];
+    if (claudeBin)
+        args.push("--claude", claudeBin);
+    if (codexBin)
+        args.push("--codex", codexBin);
+    args.push("--state-dir", stateDir);
+    for (const origin of extraOrigins)
+        args.push("--allow-origin", origin);
+    if (workspace)
+        args.push("--workspace", workspace);
+    return args;
+}
 /**
- * `--install`: checks the subscription login first (never installs a bridge that could not start), then writes the plist
- * with the absolute node, bridge file and claude paths recorded, and (re)loads it. Installing again restarts on the new file.
+ * Billing lines of an install message. The Claude line stays the sentence `--install` has always printed.
+ * A ChatGPT line is added only when Codex passed. A Claude that did not pass is named in one sentence.
+ */
+function installBillingBlock(claudeReady, codexPlan, claudeReason) {
+    const lines = [];
+    if (claudeReady)
+        lines.push("  Billing: Claude subscription (checked at every start; never an API key)");
+    if (codexPlan !== undefined)
+        lines.push(`  Billing: ${codexBillingLine(codexPlan)}`);
+    if (claudeReason)
+        lines.push(`  Claude Code is not ready on this computer: ${firstSentence(claudeReason)}`);
+    return lines.join("\n");
+}
+/**
+ * Where Codex is, and whether it is ready, for `--install`.
+ * A test that injects `check` and does not inject `checkCodex` gets "not installed" without a lookup and without a process.
+ * @param opts The command line. `--codex` overrides the name `codex`.
+ * @param deps Service seams. The real command line sets neither Codex seam.
+ * @param platform `win32` or the platform this process is on.
+ */
+async function codexInstallFacts(opts, deps, platform) {
+    // Spec: Chat.CodexConnect.EitherEngine — a test that stubs only the Claude check must not touch Codex.
+    if (deps.check !== undefined && deps.checkCodex === undefined) {
+        return { path: null, check: { ok: false, installed: false, reason: CODEX_NOT_INSTALLED } };
+    }
+    const name = opts.codex ?? "codex";
+    const plat = platform === "win32" ? "win32" : process.platform;
+    const found = deps.resolveCodex ? deps.resolveCodex(name, deps.env, deps.home, plat) : resolveCodexBin(name, deps.env, deps.home, plat, deps.nodePath);
+    const checker = deps.checkCodex ?? checkCodexReady;
+    const platformOpts = { platform: plat, home: deps.home, nodePath: deps.nodePath, ...(deps.files ? { files: deps.files } : {}) };
+    const check = await checker(found ?? name, deps.env, platformOpts);
+    return { path: found, check };
+}
+/**
+ * `--install`: checks Claude Code first, then Codex. It installs when at least one is ready.
+ * A computer with no Codex, and a Claude check that fails, sees the same refusal as before.
  * deps: { launchctl, uid, home, nodePath, file, env, log }
  */
 export async function serviceInstall(opts, deps) {
@@ -6431,11 +8373,29 @@ export async function serviceInstall(opts, deps) {
     if (!Number.isInteger(port0) || port0 < 1 || port0 > 65535)
         return { ok: false, message: "--port must be a number from 1 to 65535." };
     const claudeBin = resolveBin(opts.claude ?? "claude", env, home, platform === "win32" ? "win32" : process.platform, deps.files);
+    // Claude is resolved and checked first. Codex is the other way in, not a change to that order.
+    let claudeReason;
     if (!claudeBin)
-        return { ok: false, message: "Claude Code (`claude`) was not found. Install it and run `claude auth login`, then run --install again." };
-    const login = await (deps.check ?? checkSubscriptionLogin)(claudeBin, env);
-    if (!login.ok)
-        return { ok: false, message: `Not installed.\n${login.reason}` };
+        claudeReason = CLAUDE_NOT_FOUND_INSTALL;
+    else {
+        const login = await (deps.check ?? checkSubscriptionLogin)(claudeBin, env);
+        if (!login.ok)
+            claudeReason = login.reason;
+    }
+    let codexPath = null;
+    // undefined: no ChatGPT billing line. null: Codex is ready and named no plan.
+    let codexPlan;
+    if (claudeReason) {
+        const codex = await codexInstallFacts(opts, deps, platform);
+        if (!codex.check.ok) {
+            // No Codex on this computer: the refusal is today's sentence, with nothing about Codex added.
+            if (!codex.check.installed)
+                return { ok: false, message: claudeBin ? `Not installed.\n${claudeReason}` : claudeReason };
+            return { ok: false, message: `Not installed.\nClaude Code: ${claudeReason}\nCodex: ${codex.check.reason}` };
+        }
+        codexPath = codex.path;
+        codexPlan = codex.check.info.plan;
+    }
     const port = opts.port ?? DEFAULT_PORT;
     // Persisted in the LaunchAgent: the origins the person allowed at install time (checked now, so a typo never installs).
     let extraOrigins;
@@ -6448,18 +8408,27 @@ export async function serviceInstall(opts, deps) {
     const accessBad = accessFlagProblem(opts.access);
     if (accessBad)
         return { ok: false, message: `Not installed.\n${accessBad}` };
+    // A passing Claude check looks up Codex only after those refusals, so a refused flag never starts Codex.
+    if (!claudeReason) {
+        const codex = await codexInstallFacts(opts, deps, platform);
+        codexPath = codex.path;
+        if (codex.check.ok)
+            codexPlan = codex.check.info.plan;
+    }
+    const billingBlock = installBillingBlock(!claudeReason, codexPlan, claudeReason);
     if (platform === "win32")
-        return installWindows(opts, deps, { claudeBin, port, extraOrigins });
+        return installWindows(opts, deps, { claudeBin, codexBin: codexPath, port, extraOrigins, billingBlock });
     const f = serviceFiles(opts, home);
-    const args = ["--port", String(port), "--claude", claudeBin, "--state-dir", f.stateDir];
-    for (const o of extraOrigins)
-        args.push("--allow-origin", o);
-    if (opts.workspace)
-        args.push("--workspace", opts.workspace);
+    const args = serviceEngineArgs(port, f.stateDir, claudeBin, codexPath, extraOrigins, opts.workspace);
     const stateBad = stateDirProblem(f.stateDir, opts.workspace, home, platform);
     if (stateBad)
         return { ok: false, message: `Not installed.\n${stateBad}` };
-    const pathEnv = [...new Set([path.dirname(nodePath), path.dirname(claudeBin), "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(":");
+    // Codex's folder is not added. The bridge starts Codex by the recorded path, not by PATH.
+    const pathParts = [path.dirname(nodePath)];
+    if (claudeBin)
+        pathParts.push(path.dirname(claudeBin));
+    pathParts.push("/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin");
+    const pathEnv = [...new Set(pathParts)].join(":");
     fs.mkdirSync(path.dirname(f.plist), { recursive: true });
     fs.mkdirSync(path.dirname(f.logFile), { recursive: true });
     fs.mkdirSync(f.stateDir, { recursive: true, mode: 0o700 });
@@ -6495,7 +8464,7 @@ export async function serviceInstall(opts, deps) {
     return {
         ok: true,
         message: `Always-on bridge installed (${opts.label}). It starts when you log in and restarts if it stops.
-  Billing: Claude subscription (checked at every start; never an API key)
+${billingBlock}
   Log:     ${f.logFile}
   Get your pairing code:  node ${file} --code${flags}
   Check it:               node ${file} --status${flags}
@@ -6874,21 +8843,17 @@ function labelOnPort(f, sfs, label, port) {
 }
 async function installWindows(opts, deps, ctx) {
     const { home, nodePath, file, env } = deps;
-    const { claudeBin, port, extraOrigins } = ctx;
+    const { claudeBin, codexBin, port, extraOrigins, billingBlock } = ctx;
     const sfs = deps.sfs ?? realServiceFs;
     const exec = deps.exec ?? runExec;
     const { alive, sleep, now } = depsClock(deps);
     const hello = deps.hello ?? realHello;
     const f = serviceFilesWin(opts, home, "win32", env);
     // A % in a path would be expanded by Windows inside the command; refuse rather than start the wrong file.
-    const bad = [nodePath, file, claudeBin, f.stateDir, f.launcher].find((p) => p.includes("%"));
+    const bad = [nodePath, file, claudeBin, codexBin, f.stateDir, f.launcher].filter((p) => typeof p === "string").find((p) => p.includes("%"));
     if (bad)
         return { ok: false, message: `Not installed.\nThe path ${bad} contains a % sign, which Windows would expand inside the start-up command. Move the file to a folder without one.` };
-    const base = ["--port", String(port), "--claude", claudeBin, "--state-dir", f.stateDir];
-    for (const o of extraOrigins)
-        base.push("--allow-origin", o);
-    if (opts.workspace)
-        base.push("--workspace", opts.workspace);
+    const base = serviceEngineArgs(port, f.stateDir, claudeBin, codexBin, extraOrigins, opts.workspace);
     const stateBadW = stateDirProblem(f.stateDir, opts.workspace, home, "win32");
     if (stateBadW)
         return { ok: false, message: `Not installed.\n${stateBadW}` };
@@ -6978,7 +8943,7 @@ async function installWindows(opts, deps, ctx) {
     return {
         ok: true,
         message: `Always-on bridge installed (${opts.label}). It starts when you log in and restarts if it stops.
-  Billing: Claude subscription (checked at every start; never an API key)
+${billingBlock}
   Log:     ${f.logFile}
   Get your pairing code:  node ${cmd} --code${flags}
   Check it:               node ${cmd} --status${flags}
@@ -7165,6 +9130,9 @@ export async function runSupervisor(cli, io = {}) {
             process.on(s, onSignal);
     const bridgeFile = io.file ?? fs.realpathSync(fileURLToPath(import.meta.url));
     const childArgs = ["--port", String(cli.port ?? DEFAULT_PORT), "--claude", cli.claude ?? "claude", "--state-dir", f.stateDir];
+    // --install records --codex when it found Codex. A supervisor started with --codex passes that path to the bridge it restarts.
+    if (cli.codex)
+        childArgs.push("--codex", cli.codex);
     for (const o of cli.allowOrigins ?? [])
         childArgs.push("--allow-origin", o);
     if (cli.workspace)
@@ -7264,7 +9232,7 @@ async function main() {
     }
     const cli = parseCli(argv);
     if (cli.mode === "help") {
-        console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--allow-origin ORIGIN]... [--state-dir DIR] [--workspace FOLDER] [--full-access] [--access folder]
+        console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--codex PATH] [--allow-origin ORIGIN]... [--state-dir DIR] [--workspace FOLDER] [--full-access] [--access folder]
        node bridge.mjs --install | --uninstall | --status | --code | --unpair-all | --access-reset   (${process.platform === "win32" ? "Windows: starts at login with no window, through a per-user Run entry" : "macOS: an always-on LaunchAgent"}; add --label L to use another label)
        node bridge.mjs --selftest   prints the build number and exits (the app's update uses it to check a new file)
        node bridge.mjs --rollback   puts the previous bridge file (kept as <file>.prev by an update) back; restart the bridge after it
@@ -7274,10 +9242,10 @@ async function main() {
         return;
     }
     // A misspelled option (--allow-orgin) must not be quietly ignored: the bridge would start without what the person asked for.
-    const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--workspace", "--full-access", "--access", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--access-reset", "--supervise", "--selftest", "--rollback", "--help", "-h"]);
+    const KNOWN = new Set(["--port", "--claude", "--codex", "--allow-origin", "--state-dir", "--workspace", "--full-access", "--access", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--access-reset", "--supervise", "--selftest", "--rollback", "--help", "-h"]);
     const unknown = argv.filter((a) => a.startsWith("-") && !KNOWN.has(a.split("=")[0]));
     if (unknown.length > 0) {
-        console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --allow-origin, --state-dir, --workspace, --full-access, --access, --label, --install, --uninstall, --status, --code, --unpair-all, --access-reset, --selftest, --rollback, --help`);
+        console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --codex, --allow-origin, --state-dir, --workspace, --full-access, --access, --label, --install, --uninstall, --status, --code, --unpair-all, --access-reset, --selftest, --rollback, --help`);
         process.exit(2);
     }
     const accessBad = accessFlagProblem(cli.access);
@@ -7368,15 +9336,18 @@ async function main() {
     };
     const launch = resolveClaudeLaunch(claudeBin, process.env);
     const login = await checkSubscriptionLogin(claudeBin);
-    if (!login.ok) {
-        console.error(`\nThe bridge did not start.\n${login.reason}\n`);
-        writeStatus({ ok: false, reason: String(login.reason).replace(/\s+/g, " ").trim() });
+    // Codex is checked even when Claude is ready, so the banner can name both. Claude stays first.
+    const codexCheck = await checkCodexReady(cli.codex ?? "codex");
+    const decision = decideStart(login, codexCheck);
+    if (!decision.start) {
+        console.error(`\nThe bridge did not start.\n${decision.message}\n`);
+        writeStatus({ ok: false, reason: String(decision.message).replace(/\s+/g, " ").trim() });
         process.exit(1);
     }
     // The local control token: a fresh one at every start, written only once the port is ours (a second bridge that fails to
     // bind must not overwrite the running one's token or status). Readable by this user only. `--code` uses it.
     const controlToken = crypto.randomBytes(32).toString("hex");
-    const bridge = createBridge({ port, claudeBin, controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, fullAccess: cli.fullAccess, workspaceFile: path.join(f.stateDir, "workspace.json"), label: cli.label, stateDir: f.stateDir, log: (l) => console.log(`  ${l}`) });
+    const bridge = createBridge({ port, claudeBin, ...codexBinOption(cli), ...(login.ok ? {} : { claudeNotReady: login.reason }), controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, fullAccess: cli.fullAccess, workspaceFile: path.join(f.stateDir, "workspace.json"), label: cli.label, stateDir: f.stateDir, log: (l) => console.log(`  ${l}`) });
     try {
         await bridge.start();
     }
@@ -7411,21 +9382,30 @@ async function main() {
             catch { /* ignore */ }
         }
     }
-    const who = login.info.email ? ` (${login.info.email})` : "";
-    const billing = `Claude subscription${who}, plan ${login.info.subscriptionType}`;
-    writeStatus({ ok: true, port: bridge.port, billing });
+    const claudeLine = decision.claudeReady
+        ? `  Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`; chat turns: tools off (no shell, no files, no web)${bridge.workspacePath ? `; code turns: ${bridge.access === "computer" ? "computer mode (full access)" : "folder mode (only the code folder)"}` : ""}`
+        : `  Claude Code: not ready (${firstSentence(login.ok ? "" : login.reason)})`;
+    // The word is `codex`, not the path: the banner must not name where the binary sits.
+    const codexLine = codexCheck.ok
+        ? `  Codex: your own \`codex\` ${codexCheck.info.version}; chat turns only: tools off (no shell, no files, no web)`
+        : codexCheck.installed
+            ? `  Codex: not ready (${firstSentence(codexCheck.reason)})`
+            : "  Codex: not installed";
+    const billingText = decision.billingLines.map((line) => `  Billing:      ${line}`).join("\n");
+    writeStatus({ ok: true, port: bridge.port, billing: decision.billingLines.join("; ") });
     console.log(`
 Gilb Claude Code bridge
   Listening:    http://127.0.0.1:${bridge.port}  (this computer only)
-  Billing:      ${billing}
-                API keys are removed from every Claude Code run; none is ever used.
-  Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`; chat turns: tools off (no shell, no files, no web)${bridge.workspacePath ? `; code turns: ${bridge.access === "computer" ? "computer mode (full access)" : "folder mode (only the code folder)"}` : ""}
+${billingText}
+                API keys are removed from every Claude Code and Codex run; none is ever used.
+${claudeLine}
+${codexLine}
 ${bridge.access === "computer" ? `  ${platform === "win32" ? FULL_ACCESS_NOTICE_WINDOWS : FULL_ACCESS_NOTICE}\n` : cli.fullAccess ? `  ${FULL_ACCESS_SAVED_FOLDER_NOTICE}\n` : ""}${bridge.workspacePath ? `  Code folder:  ${bridge.workspacePath}  (${bridge.access === "computer" ? "the start folder of a code turn; full computer access is on" : platform === "win32" ? "a code turn may read and edit files only there; it cannot run commands on Windows" : "a code turn may read, edit and run commands only there"})\n` : ""}
   Allowed apps: ${allowedOrigins.join(", ")}
                 (any other web page is refused; add one with --allow-origin)
 
   Pairing code: ${bridge.pairingCode}
-  In the app that gave you this command, press Connect, choose Claude Code, and type this code.
+  In the app that gave you this command, press Connect, choose Claude Code or Codex, and type this code.
   Press Ctrl+C to stop. (Later: \`node ${commandPathForPerson(fileURLToPath(import.meta.url), home, platform)} --code\` prints the current code.)
 `);
     const stop = () => bridge.close().then(() => process.exit(0));
