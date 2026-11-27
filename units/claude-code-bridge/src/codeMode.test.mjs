@@ -246,16 +246,46 @@ describe("shutdown while a code turn runs", () => {
     expect(listed(pid)).toBe(false);
     expect(took).toBeLessThan(process.platform === "win32" ? WINDOWS_CLOSE_BOUND_MS : 1000);
   });
+
+  // Spec: a chat child that ignores SIGTERM is ended by close() too: SIGTERM, then SIGKILL after the bridge's grace (killGraceMs, here 300 ms), inside
+  // the close budget. Off Windows a chat child used to get SIGTERM only and outlived close() (and the restart's exit 75) for as long as it ignored it.
+  // The stand-in IGNORETERMFOREVER ignores SIGTERM for good (a stand-in; on Windows taskkill /F ends it regardless of signals).
+  it("close() ends a chat child that ignores SIGTERM (page already gone)", async () => {
+    const listed = (pid) => {
+      if (process.platform !== "win32") { try { process.kill(pid, 0); return true; } catch { return false; } }
+      return execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/NH"], { encoding: "utf8" }).includes(` ${pid} `);
+    };
+    const secret = await start({ bridgeOpts: { killGraceMs: 300 } });
+    const ctl = new AbortController();
+    const hung = fetch(`${base}/v1/turn`, { method: "POST", signal: ctl.signal, headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify(T({ prompt: "IGNORETERMFOREVER WAITFOREVER" })) }).then((r) => r.text()).catch(() => {});
+    for (let i = 0; i < 100 && runs().length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    const pid = runs()[0].pid;
+    try {
+      ctl.abort();
+      await hung;
+      await new Promise((r) => setTimeout(r, 100));
+      const t0 = Date.now();
+      await bridge.close();
+      const took = Date.now() - t0;
+      bridge = undefined;
+      expect(listed(pid)).toBe(false);
+      expect(took).toBeLessThan(process.platform === "win32" ? WINDOWS_CLOSE_BOUND_MS : 1000);
+    } finally {
+      try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+    }
+  });
 });
 
 // Spec: close() waits for process listings at most SNAPSHOT_CAP_MS in all (bridge.ts, not exported: repeated here). A tracked code turn with a
 // descendant makes close() list processes several times (the last look in stopChild, the look in killAllTracked, and two inside killEntries); each
 // used to wait up to the cap by itself, so a slow listing on a later call gave a close of 3 to 4.5 s (tester's probe, bridge 0.3.25 round 1).
-// The slow call is injected through the bridge's own `procList` option: the 1st, 3rd, 4th and 5th listing of the close.
+// The slow listing is injected through the bridge's own `procList` option: from the 1st, 3rd, 4th and 5th listing of the close on (every later one is
+// slow too). "From" and not "only": which call is which depends on how fast the stand-in's tracking ends, and the 3rd listing is often the unawaited one
+// of the child's own exit, so a single slow call 3 never reached the close.
 const LISTING_CAP_MS = 1500;
 describe("close() waits for process listings within one budget", () => {
   for (const slowCall of [1, 3, 4, 5]) {
-    it(`a slow listing on call ${slowCall} (3 s) still closes within the cap + 500 ms`, async () => {
+    it(`slow listings from call ${slowCall} on (3 s each) still close within the cap + 500 ms`, async () => {
       const stray = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
       try {
         let claudePid = 0;
@@ -263,7 +293,7 @@ describe("close() waits for process listings within one budget", () => {
         const procList = async () => {
           if (!claudePid) return []; // before the turn's child is known: the look at its start
           const n = ++calls;
-          if (n === slowCall) await new Promise((r) => setTimeout(r, 3000));
+          if (n >= slowCall) await new Promise((r) => setTimeout(r, 3000));
           const me = { pid: claudePid, ppid: 1, start: "C" };
           return n >= 2 ? [me, { pid: stray.pid, ppid: claudePid, start: "S1" }] : [me]; // a descendant of the turn's child from the second look on
         };

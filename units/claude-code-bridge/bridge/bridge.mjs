@@ -1154,8 +1154,24 @@ export function killChild(child, env = process.env, o = {}) {
         const leader = child[GROUP_LEADER];
         if (leader !== undefined)
             return killGroup(leader, o.graceMs);
+        // A chat child leads no group of its own: SIGTERM it, and if it is still there after the same grace a code child's group gets, SIGKILL it.
         child.kill("SIGTERM");
-        return Promise.resolve();
+        if (typeof child.once !== "function" || child.exitCode !== null || child.signalCode !== null)
+            return Promise.resolve();
+        return new Promise((resolve) => {
+            let hard;
+            const done = () => { clearTimeout(soft); clearTimeout(hard); resolve(); };
+            const soft = setTimeout(() => {
+                try {
+                    child.kill("SIGKILL");
+                }
+                catch { /* gone */ }
+                hard = setTimeout(done, 3000); // as killGroup: a last wait for the exit after the SIGKILL
+                hard.unref();
+            }, o.graceMs ?? KILL_GRACE_MS);
+            soft.unref();
+            child.once("exit", done);
+        });
     }
     const pid = child.pid;
     const root = envGet(env, "SystemRoot") ?? envGet(env, "windir") ?? "C:\\Windows";
@@ -5645,6 +5661,8 @@ export function createBridge(opts = {}) {
     async function restartAfterUpdate() {
         const pollMs = opts.updateRestart?.pollMs ?? 250;
         const capMs = opts.updateRestart?.capMs ?? 10 * 60 * 1000;
+        // The deferral watches turns and code groups only, not liveChat: a chat child whose page is gone is not waited for here. closeBridge, called
+        // below, stops the chat children that are left and waits for them to exit, so exit(75) never finds one still ending.
         if (turns.size > 0 || liveGroups.size > 0) {
             log("Update installed; restart deferred until the running turn ends");
             const capAt = Date.now() + capMs;
@@ -6271,8 +6289,9 @@ export function createBridge(opts = {}) {
             if (c.exitCode !== null || c.signalCode !== null)
                 return;
             const gone = new Promise((r) => c.once("exit", () => r()));
-            await stopChild(c);
-            await withinListingBudget(gone); // the same budget as the listings: a child that ignores the signal cannot hold close() longer
+            // The same stop as the hang-up gives (SIGTERM, then SIGKILL after the grace), with the grace cut to what is left of the close budget, so a child
+            // that ignores SIGTERM is gone when close() returns and still cannot hold close() longer than the budget.
+            await withinListingBudget(Promise.all([killChild(c, env, { ...opts.platformOpts, graceMs: Math.min(opts.killGraceMs ?? KILL_GRACE_MS, listingLeft()) }), gone]));
         };
         const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)), [...liveChat].map(stopChat))).then(() => killAllTracked()).then(() => previewsClosed);
         return stopped.then(() => new Promise((resolve) => {
