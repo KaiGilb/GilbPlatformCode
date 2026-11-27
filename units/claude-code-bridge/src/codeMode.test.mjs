@@ -616,7 +616,8 @@ describe("sandbox local binding", () => {
     expectOtherSandboxFieldsEqualMain();
   });
 
-  it("U2 holds when the host joins paths the Windows way", () => {
+  // On a Windows host U2 itself runs with real Windows paths.
+  it.skipIf(process.platform === "win32")("U2 holds when the host joins paths the Windows way", () => {
     // Spec: Chat.SandboxLocalBind — a sandboxed chat session may bind local ports; nothing else widens
     // computerSandboxSettings does not read os.tmpdir, TMPDIR, or os.homedir (home and tmpDirs are arguments; U2 passes []).
     // It reads the host path module. Point those methods at path.win32 for this comparison.
