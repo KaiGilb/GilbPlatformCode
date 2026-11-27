@@ -4,11 +4,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// How long to wait for a stand-in to exit; the wait ends the moment the last one is gone, so a larger bound costs nothing when they exit at once.
-// Windows: a chat stand-in stopped by the bridge took 11.2 s to exit once, while the whole suite ran in parallel (run 46035653922, SU-5a), and the
-// 5 s bound then removed the folder under it (EBUSY). Isolated, the same stop takes about 50 ms (40 runs, median 50 ms, max taskkill 99 ms), so the
-// slowness is the loaded runner, not a stuck child; the SU-5a file's hooks have a 30 s limit (a file with the default 10 s hook limit ends at that limit instead).
-const WAIT_MS = process.platform === "win32" ? 25000 : 5000;
+const WAIT_MS = 5000;
+// Windows only, and only after the folder could not be removed (EBUSY): a stand-in the bridge had stopped took 11.2 s to exit once, while the whole
+// suite ran in parallel (run 46035653922, SU-5a), and the 5 s wait removed the folder under it. The wait ends the moment the last one is gone.
+// Isolated, the same stop takes about 50 ms (40 runs, median 50 ms, max taskkill 99 ms): the slowness is the loaded runner, not a stuck child.
+// It is not the first wait: a stand-in that lives on without holding the folder would then stretch every teardown past a 10 s hook limit.
+const WAIT_AFTER_BUSY_MS = 25000;
 const KILL_AFTER_MS = 3000;
 const POLL_MS = 40;
 const MAX_LOG_BYTES = 2_000_000;
@@ -95,12 +96,12 @@ function collectPids(dir, logPaths) {
   return pids;
 }
 
-async function waitForExit(pids) {
+async function waitForExit(pids, waitMs = WAIT_MS) {
   const start = Date.now();
   const signaled = new Set();
   while (pids.size > 0) {
     const elapsed = Date.now() - start;
-    if (elapsed >= WAIT_MS) return;
+    if (elapsed >= waitMs) return;
     let live = false;
     for (const pid of [...pids]) {
       if (!pidAlive(pid)) {
@@ -119,7 +120,7 @@ async function waitForExit(pids) {
       }
     }
     if (!live) return;
-    const left = WAIT_MS - (Date.now() - start);
+    const left = waitMs - (Date.now() - start);
     if (left <= 0) return;
     await delay(Math.min(POLL_MS, left));
   }
@@ -133,5 +134,13 @@ async function waitForExit(pids) {
 export async function removeTestDir(dir, logPaths) {
   const pids = collectPids(dir, logPaths);
   if (pids.size > 0) await waitForExit(pids);
-  if (typeof dir === "string" && dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  if (typeof dir !== "string" || !dir) return;
+  const rm = () => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  try {
+    rm();
+  } catch (e) {
+    if (process.platform !== "win32" || e?.code !== "EBUSY" || pids.size === 0) throw e;
+    await waitForExit(pids, WAIT_AFTER_BUSY_MS); // those still alive; returns as soon as they are gone
+    rm();
+  }
 }
