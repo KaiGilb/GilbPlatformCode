@@ -818,6 +818,7 @@ describe("fix round 4 (T4-1): the one-turn guard holds a folder by device:inode 
     const { b, ws, pid, ctl, first } = await liveInP1("T4a", ["p1"]);
     replace(path.join(ws, "p1"));
     const second = await turn(b, { ...code("hello"), project: "p1" });
+    if (second.status !== 429) console.log(`[T4A] Batch F diagnostic: removed before merge: second turn got ${second.status} body=${JSON.stringify(second.json)} text=${String(second.text).slice(0, 200)} pids=${JSON.stringify(pids())}`);
     expect(second.status).toBe(429);
     expect(second.json.code).toBe("CodeTurnRunning");
     expect(second.json.ownTurn).toBe(true);
