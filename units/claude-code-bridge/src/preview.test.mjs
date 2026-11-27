@@ -434,7 +434,11 @@ describe("snapshot: the symlink swap race", () => {
 });
 
 describe("snapshot: the event loop", () => {
-  it("keeps answering /v1/check during an Open of 5,000 small files (no stall over 150 ms)", async () => {
+  // These two limits are test-harness numbers, not a Value. They were set on a Mac. On GitHub's Windows runner with Node 22 the max measured 662 to 1,037 ms
+  // with no product fault, so the test failed there now and then. Kai chose 300 / 1,500 for win32 on 2026-11-27; macOS and Linux keep 150 / 600.
+  const POLL_P95_LIMIT_MS = process.platform === "win32" ? 300 : 150;
+  const POLL_MAX_LIMIT_MS = process.platform === "win32" ? 1_500 : 600;
+  it(`keeps answering /v1/check during an Open of 5,000 small files (p95 under ${POLL_P95_LIMIT_MS} ms, no stall over ${POLL_MAX_LIMIT_MS} ms)`, async () => {
     // Spec: H1a.N1 — the copy yields to the event loop (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
     await start();
     const p = mkApp("app", await freePort());
@@ -459,8 +463,8 @@ describe("snapshot: the event loop", () => {
     console.log(`/v1/check during Open of ~5,000 files: ${waits.length} polls, p95 ${p95} ms, max ${max} ms`);
     expect(r.status).toBe(200);
     // The p95 is the bound (one slow poll on a shared CI runner is noise); the max only guards against a real stall like the 1.3 s of the blocking copy.
-    expect(p95).toBeLessThanOrEqual(150);
-    expect(max).toBeLessThanOrEqual(600);
+    expect(p95, `p95 ${p95} ms is over the ${POLL_P95_LIMIT_MS} ms limit`).toBeLessThanOrEqual(POLL_P95_LIMIT_MS);
+    expect(max, `max ${max} ms is over the ${POLL_MAX_LIMIT_MS} ms limit`).toBeLessThanOrEqual(POLL_MAX_LIMIT_MS);
   }, 60_000);
 });
 
