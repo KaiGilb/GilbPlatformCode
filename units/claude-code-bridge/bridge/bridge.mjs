@@ -1171,7 +1171,10 @@ export function killChild(child, env = process.env, o = {}) {
             return resolve();
         }
         try {
+            const __t = Date.now();
+            su5a(`killChild: taskkill /PID ${pid} starts`); // Batch F diagnostic: removed before merge
             run(path.win32.join(root, "System32", "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], { windowsHide: true }, (err) => {
+                su5a(`killChild: taskkill for ${pid} returned after ${Date.now() - __t} ms err=${err ? String(err.message).slice(0, 100) : "none"}`); // Batch F diagnostic: removed before merge
                 if (err)
                     child.kill(); // taskkill could not run, or the process is already gone
                 resolve();
@@ -6277,7 +6280,7 @@ export function createBridge(opts = {}) {
                 server.closeIdleConnections();
             const cut = setTimeout(() => { if (typeof server.closeAllConnections === "function")
                 server.closeAllConnections(); }, CLOSE_GRACE_MS);
-            server.close(() => { clearTimeout(cut); closeListingDeadline = null; releaseLock(); resolve(); });
+            server.close(() => { clearTimeout(cut); closeListingDeadline = null; su5a(`closeBridge done port=${port}`); releaseLock(); resolve(); });
         }));
     };
     const server = http.createServer((req, res) => {

@@ -129,6 +129,7 @@ async function waitForExit(pids) {
  */
 export async function removeTestDir(dir, logPaths) {
   const pids = collectPids(dir, logPaths);
+  if (process.platform === "win32") console.error(`[SU5A] ${new Date().toISOString()} removeTestDir starts dir=${dir} pids to wait for=[${[...pids].join(",")}]`); // Batch F diagnostic: removed before merge
   if (pids.size > 0) await waitForExit(pids);
   try {
     if (typeof dir === "string" && dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
