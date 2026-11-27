@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import http from "node:http";
+import net from "node:net";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { codeTurnSettings, computerSandboxSettings, createBridge, parseCli, resolveThroughLinks, validateWorkspace, CODE_TOOLS, WEB_TOOLS } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
@@ -217,6 +220,67 @@ describe("shutdown while a code turn runs", () => {
     bridge = undefined;
     await first.catch(() => {});
     expect(took).toBeLessThan(process.platform === "win32" ? WINDOWS_CLOSE_BOUND_MS : 1000);
+  });
+});
+
+// Spec: close() waits for process listings at most SNAPSHOT_CAP_MS in all (bridge.ts, not exported: repeated here). A tracked code turn with a
+// descendant makes close() list processes several times (the last look in stopChild, the look in killAllTracked, and two inside killEntries); each
+// used to wait up to the cap by itself, so a slow listing on a later call gave a close of 3 to 4.5 s (tester's probe, bridge 0.3.25 round 1).
+// The slow call is injected through the bridge's own `procList` option: the 1st, 3rd, 4th and 5th listing of the close.
+const LISTING_CAP_MS = 1500;
+describe("close() waits for process listings within one budget", () => {
+  for (const slowCall of [1, 3, 4, 5]) {
+    it(`a slow listing on call ${slowCall} (3 s) still closes within the cap + 500 ms`, async () => {
+      const stray = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
+      try {
+        let claudePid = 0;
+        let calls = 0;
+        const procList = async () => {
+          if (!claudePid) return []; // before the turn's child is known: the look at its start
+          const n = ++calls;
+          if (n === slowCall) await new Promise((r) => setTimeout(r, 3000));
+          const me = { pid: claudePid, ppid: 1, start: "C" };
+          return n >= 2 ? [me, { pid: stray.pid, ppid: claudePid, start: "S1" }] : [me]; // a descendant of the turn's child from the second look on
+        };
+        const secret = await start({ bridgeOpts: { fullAccess: true, snapshotMs: 600_000, killGraceMs: 300, procList } });
+        const first = post(secret, T({ mode: "code", prompt: "WAITFOREVER" }));
+        for (let i = 0; i < 100 && runs().length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+        claudePid = runs()[0].pid;
+        await new Promise((r) => setTimeout(r, 800));
+        const t0 = Date.now();
+        await bridge.close();
+        const took = Date.now() - t0;
+        bridge = undefined;
+        await first.catch(() => {});
+        expect(took).toBeLessThan(LISTING_CAP_MS + 500);
+      } finally {
+        try { process.kill(stray.pid, "SIGKILL"); } catch { /* already ended */ }
+      }
+    });
+  }
+});
+
+// Spec: close() cuts what is still open after a short grace. A half-sent request (its response will never start) and an idle keep-alive connection
+// are open at close; close() must return within 1 s. Without closeAllConnections the half-sent request holds server.close() for seconds (5.8 s measured
+// on the bridge before 0.3.25); the idle connection is closed by closeIdleConnections or by Node's own server.close() (Node 19 and later), so on Node 19+
+// removing closeIdleConnections alone cannot show in any test.
+describe("close() with connections still open", () => {
+  it("returns within 1 s with a half-sent request and an idle keep-alive connection open", async () => {
+    await start();
+    const half = net.connect(bridge.port, "127.0.0.1");
+    await new Promise((r) => half.once("connect", r));
+    half.on("error", () => {});
+    half.write("POST /v1/turn HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{\"x\":");
+    const agent = new http.Agent({ keepAlive: true });
+    await new Promise((resolve, reject) => http.get({ host: "127.0.0.1", port: bridge.port, path: "/v1/hello", agent }, (r) => { r.resume(); r.on("end", resolve); }).on("error", reject));
+    await new Promise((r) => setTimeout(r, 100));
+    const t0 = Date.now();
+    await bridge.close();
+    const took = Date.now() - t0;
+    bridge = undefined;
+    half.destroy();
+    agent.destroy();
+    expect(took).toBeLessThan(1000);
   });
 });
 

@@ -71,6 +71,7 @@ async function start(opts = {}) {
   bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "work"), home: dir, codeEnvExtraPrefixes: ["FAKE_"], codePlatform: "darwin", ...opts, env });
   await bridge.start();
   base = `http://127.0.0.1:${bridge.port}`;
+  console.error(`[SU5A] test="${expect.getState().currentTestName}" dir=${dir} port=${bridge.port}`); // Batch F diagnostic: removed before merge
   const res = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: bridge.pairingCode }) });
   return (await res.json()).secret;
 }

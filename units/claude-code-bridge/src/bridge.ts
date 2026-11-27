@@ -1169,6 +1169,8 @@ export const WINDOWS_PROC_SCRIPT = "Get-CimInstance Win32_Process | Select-Objec
  * timeout (3 to 4 s; runs 46020685013 and 46020700133). 250 ms is a grace for a response that is finishing its last write.
  */
 const CLOSE_GRACE_MS = 250;
+// Batch F diagnostic: removed before merge. [SU5A] lines: who starts, stops and ends each claude child (X5 part 5).
+const su5a = (m: string) => { try { console.error(`[SU5A] ${new Date().toISOString()} ${m}`); } catch { /* diagnostic only */ } };
 /**
  * How long a stop or a close waits for a last look at the process list before it goes on with what is already known. Off Windows the list is `ps`
  * (about 20 ms); on Windows it is a PowerShell start that took several seconds on GitHub's runner (run 46025210385: a whole close of 4891 ms), and a
@@ -3320,10 +3322,33 @@ export function createBridge(opts: BridgeOptions = {}) {
   let port = opts.port ?? DEFAULT_PORT;
   // How to start claude, worked out once (Windows: never through a shell; a claude that cannot be started safely is refused).
   const launch = resolveClaudeLaunch(claudeBin, env, opts.platformOpts);
+  /**
+   * The budget for the process listings on the close path. close() sets the moment it ends (SNAPSHOT_CAP_MS after it starts) and every listing it
+   * waits for (the last look in stopChild, the look in killAllTracked, and the two inside killEntries) shares it, so the whole close waits at most
+   * that long for listings, not once per listing. Outside close it is null: a stop waits at most SNAPSHOT_CAP_MS for its own look, and the
+   * periodic tracking is never capped.
+   */
+  let closeListingDeadline: number | null = null;
+  let closeCapLogged = false;
+  const TIMED_OUT = Symbol("listing budget spent");
+  const listingLeft = () => (closeListingDeadline === null ? SNAPSHOT_CAP_MS : Math.max(0, closeListingDeadline - Date.now()));
+  async function withinListingBudget<T>(p: Promise<T>): Promise<T | typeof TIMED_OUT> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([p, new Promise<typeof TIMED_OUT>((r) => { timer = setTimeout(() => r(TIMED_OUT), listingLeft()); timer.unref(); })]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  const logListingCap = () => {
+    if (closeListingDeadline !== null) { if (closeCapLogged) return; closeCapLogged = true; }
+    log(`close: process listing took over ${SNAPSHOT_CAP_MS} ms; killed the tracked tree only`);
+  };
   /** Stops a child (and its group). A tracked code child is looked at first, so what it started is known before the group is gone and its children are re-parented. */
   const stopChild = async (c: ChildProcess | null | undefined): Promise<void> => {
+    su5a(`stopChild pid=${c?.pid} exitCode=${c?.exitCode} port=${port}`); // Batch F diagnostic: removed before merge
     const tr = c?.pid !== undefined ? tracks.get(c.pid) : undefined;
-    if (tr && platform !== "win32") await Promise.race([snapshotTrack(tr), new Promise((r) => setTimeout(r, SNAPSHOT_CAP_MS).unref())]); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
+    if (tr && platform !== "win32" && listingLeft() > 0) await withinListingBudget(snapshotTrack(tr)); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
     return killChild(c, env, { ...opts.platformOpts, graceMs: opts.killGraceMs });
   };
   /**
@@ -3407,13 +3432,26 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** Ends recorded processes: SIGTERM, then SIGKILL, after a fresh look at each one's start time; whatever survives is remembered. Returns how many survive. */
   async function killEntries(entries: [number, string][]): Promise<number> {
     if (entries.length === 0) return 0;
-    const rows = await procList();
-    if (!rows) return entries.length;
+    const budgeted = closeListingDeadline !== null; // only close() has a budget; the tracking that runs while turns live is never capped
     const startOf = new Map(entries);
-    const left = await killPids(stillMatching(entries, rows), {
-      graceMs: opts.killGraceMs, platform, env, execFile: opts.platformOpts?.execFile,
-      stillMine: async (alive) => { const now2 = await procList(); return now2 ? stillMatching(alive.map((p): [number, string] => [p, startOf.get(p) ?? ""]), now2) : []; },
-    });
+    const listed = budgeted ? (listingLeft() > 0 ? await withinListingBudget(procList()) : TIMED_OUT) : await procList();
+    let left: number[];
+    if (listed === TIMED_OUT) {
+      // No fresh look in the budget: end what is already known, without checking start times again (they were recorded at the last look).
+      logListingCap();
+      left = await killPids(entries.map(([pid]) => pid), { graceMs: opts.killGraceMs, platform, env, execFile: opts.platformOpts?.execFile });
+    } else {
+      const rows = listed;
+      if (!rows) return entries.length;
+      left = await killPids(stillMatching(entries, rows), {
+        graceMs: opts.killGraceMs, platform, env, execFile: opts.platformOpts?.execFile,
+        stillMine: async (alive) => {
+          const now2 = budgeted ? (listingLeft() > 0 ? await withinListingBudget(procList()) : TIMED_OUT) : await procList();
+          if (now2 === TIMED_OUT) { logListingCap(); return alive; }
+          return now2 ? stillMatching(alive.map((p): [number, string] => [p, startOf.get(p) ?? ""]), now2) : [];
+        },
+      });
+    }
     for (const pid of left) residual.set(pid, startOf.get(pid) ?? "");
     return left.length;
   }
@@ -3421,10 +3459,9 @@ export function createBridge(opts: BridgeOptions = {}) {
   async function killAllTracked(except: ReadonlySet<number> = new Set()): Promise<number> {
     for (const tr of [...tracks.values()]) {
       if (except.has(tr.pid)) continue;
-      let timer: NodeJS.Timeout | undefined;
-      const capped = await Promise.race([snapshotTrack(tr).then(() => false, () => false), new Promise<boolean>((r) => { timer = setTimeout(() => r(true), SNAPSHOT_CAP_MS); timer.unref(); })]);
-      clearTimeout(timer);
-      if (capped) log(`close: process listing took over ${SNAPSHOT_CAP_MS} ms; killed the tracked tree only`);
+      if (closeListingDeadline !== null && listingLeft() === 0) { logListingCap(); break; } // the budget is spent: no new listing is started
+      const seen = await withinListingBudget(snapshotTrack(tr).then(() => true, () => true));
+      if (seen === TIMED_OUT) logListingCap();
     }
     const entries: [number, string][] = [];
     for (const tr of tracks.values()) if (!except.has(tr.pid)) entries.push(...tr.desc);
@@ -4450,6 +4487,10 @@ export function createBridge(opts: BridgeOptions = {}) {
         if (child.pid !== undefined && scope) liveFolder.set(child.pid, { path: guardPath(scope.path), id: scope.id });
       }
       turn.child = child;
+      { // Batch F diagnostic: removed before merge
+        su5a(`spawn pid=${child.pid} kind=${turn.code ? "code" : "chat"} turnId=${turn.id} parent=${turn.parent ? "yes" : "no"} cwd=${turn.code && scope ? scope.path : workDir} port=${port}`);
+        child.on("exit", (c, sg) => su5a(`exit pid=${child.pid} turnId=${turn.id} code=${c} signal=${sg}`));
+      }
       let buf = "";
       let stderr = "";
       let model = "";
@@ -5102,8 +5143,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       });
     } catch (e) {
       const err = e as ErrLike & { status?: number | null; stderr?: unknown };
-      const words = typeof err.stderr === "string" ? err.stderr.trim().slice(0, 300) : "";
-      log(`project ${name}: git init failed: ${err.status ?? err.code ?? err.message ?? e}${words ? `: ${words}` : ""}`);
+      const words = typeof err.stderr === "string" ? cleanForLog(err.stderr.trim().slice(0, 300)) : ""; // git's words are not ours: no line break of theirs may start a second log line
+      log(`project ${name}: git init failed: ${cleanForLog(err.status ?? err.code ?? err.message ?? e)}${words ? `: ${words}` : ""}`);
     }
     opts.beforeProjectNpmrc?.(path.join(workspace.path, name));
     let npmrc = false;
@@ -5742,6 +5783,9 @@ export function createBridge(opts: BridgeOptions = {}) {
   };
   const closeBridge = (): Promise<void> => {
     bridgeClosing = true; // from here no preview starts, even on a connection that is still open
+    su5a(`closeBridge starts port=${port} workDir=${workDir} turns=[${[...turns.values()].map((t) => `${t.id}:${t.child?.pid}`).join(",")}] liveGroups=[${[...liveGroups.keys()].join(",")}]`); // Batch F diagnostic: removed before merge
+    closeListingDeadline = Date.now() + SNAPSHOT_CAP_MS;
+    closeCapLogged = false;
     const previewsClosed = closeAllPreviews();
     const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => previewsClosed);
     return stopped.then(() => new Promise<void>((resolve) => {
@@ -5750,7 +5794,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       // (closeIdleConnections / closeAllConnections exist from Node 18.2; the unit allows Node >=18, so each is checked.)
       if (typeof server.closeIdleConnections === "function") server.closeIdleConnections();
       const cut = setTimeout(() => { if (typeof server.closeAllConnections === "function") server.closeAllConnections(); }, CLOSE_GRACE_MS);
-      server.close(() => { clearTimeout(cut); releaseLock(); resolve(); });
+      server.close(() => { clearTimeout(cut); closeListingDeadline = null; releaseLock(); resolve(); });
     }));
   };
   const server = http.createServer((req, res) => {

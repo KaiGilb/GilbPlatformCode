@@ -333,6 +333,35 @@ describe("POST /v1/projects/create makes a git repo (friction 47)", () => {
     }
   });
 
+  // Spec: friction #47 — a failed git init is only logged, and git's own words go in as one line: its line break must not start a second log line.
+  it("a failing git's stderr is logged as one line (no line break of git's own)", async () => {
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-fakegit-"));
+    const isWin = process.platform === "win32";
+    const logs = [];
+    const env = {};
+    if (isWin) {
+      // Windows starts git.exe only (no shell, no .cmd): a copy of node that fails at load through NODE_OPTIONS stands in for git.
+      fs.copyFileSync(process.execPath, path.join(bin, "git.exe"));
+      fs.writeFileSync(path.join(bin, "failgit.cjs"), 'process.stderr.write("a\\nforged line"); process.exit(1);\n');
+      env.NODE_OPTIONS = `--require=${path.join(bin, "failgit.cjs").replace(/\\/g, "/")}`;
+    } else {
+      fs.writeFileSync(path.join(bin, "git"), "#!/bin/sh\nprintf 'a\\nforged line' >&2\nexit 1\n", { mode: 0o755 });
+    }
+    const pathKey = Object.keys(process.env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+    env[pathKey] = `${bin}${path.delimiter}${process.env[pathKey] ?? ""}`;
+    try {
+      await start({ env, bridgeOpts: { log: (l) => logs.push(l) } });
+      const r = await api("/v1/projects/create", { name: "alpha" });
+      expect(r.status).toBe(200);
+      expect(r.json).toEqual({ name: "alpha", npmrc: true });
+      const failed = logs.filter((l) => l.includes("git init failed"));
+      expect(failed).toEqual(["project alpha: git init failed: 1: aforged line"]);
+      expect(logs.some((l) => l === "forged line" || l.startsWith("forged line"))).toBe(false);
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
   // Spec: friction #47 — the existing deny on .git hooks, config and info/attributes covers the new repo, because it exists when the turn starts.
   it("the new repo's hooks, config and info/attributes are in the deny list", async () => {
     await start();
