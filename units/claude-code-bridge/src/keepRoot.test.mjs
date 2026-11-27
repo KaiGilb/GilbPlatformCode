@@ -408,41 +408,31 @@ describe("what a caller is told (S7, S8)", () => {
     const ws = mk("Unpaired2");
     const b = await start({ workspace: ws });
     const running = turn(b, code("WAITFOREVER")).catch(() => {});
-    const __t0 = Date.now(); // Batch F diagnostic: removed before merge
     for (let i = 0; i < 100 && !fs.existsSync(logFile); i++) await new Promise((r) => setTimeout(r, 50));
-    console.log(`Batch F diagnostic (removed before merge): keepRoot wait for first run log: ${Date.now() - __t0} ms, ${Date.now() - __t0 >= 4900 ? "TIMED OUT" : "ok"}`);
     for (const route of ["/v1/workspace/choose", "/v1/workspace/create", "/v1/workspace/open"]) {
       const r = await call(b, route, { name: "X" }, null);
       expect(r.status).toBe(401);
       expect(r.text).toBe(JSON.stringify({ error: "Pair first." }));
     }
-    console.log(`Batch F diagnostic (removed before merge): keepRoot S7 routes answered at ${Date.now() - __t0} ms since the wait began`); // Batch F diagnostic: removed before merge
     b.bridge.server.closeAllConnections?.();
     await b.bridge.close(); // stops the waiting child here, so the teardown is not left to do it (slow on Windows)
-    console.log(`Batch F diagnostic (removed before merge): keepRoot S7 bridge.close() done at ${Date.now() - __t0} ms since the wait began`); // Batch F diagnostic: removed before merge
     await running;
-    console.log(`Batch F diagnostic (removed before merge): keepRoot S7 running settled at ${Date.now() - __t0} ms since the wait began`); // Batch F diagnostic: removed before merge
   });
   it("S8: a paired hello and a 409 carry the folder name only, never a path", async () => {
     // Spec: S8, and item 4: runningProjectFolder on the running 409.
     const ws = mk("Named");
     const b = await start({ workspace: ws, chooseFolder: async () => null });
     const running = turn(b, code("WAITFOREVER")).catch(() => {});
-    const __t0 = Date.now(); // Batch F diagnostic: removed before merge
     for (let i = 0; i < 100 && !fs.existsSync(logFile); i++) await new Promise((r) => setTimeout(r, 50));
-    console.log(`Batch F diagnostic (removed before merge): keepRoot wait for first run log: ${Date.now() - __t0} ms, ${Date.now() - __t0 >= 4900 ? "TIMED OUT" : "ok"}`);
     for (const [route, body] of [["/v1/workspace/choose", {}], ["/v1/workspace/create", { name: "Other" }]]) {
       const r = await call(b, route, body);
       expect(r.status).toBe(409);
       expect(r.json).toEqual({ error: "A code turn is running. Wait for it to finish.", runningProjectFolder: "Named" });
       expect(r.text).not.toContain(home);
     }
-    console.log(`Batch F diagnostic (removed before merge): keepRoot S8 routes answered at ${Date.now() - __t0} ms since the wait began`); // Batch F diagnostic: removed before merge
     b.bridge.server.closeAllConnections?.();
     await b.bridge.close(); // stops the waiting child here, so the teardown is not left to do it (slow on Windows)
-    console.log(`Batch F diagnostic (removed before merge): keepRoot S8 bridge.close() done at ${Date.now() - __t0} ms since the wait began`); // Batch F diagnostic: removed before merge
     await running;
-    console.log(`Batch F diagnostic (removed before merge): keepRoot S8 running settled at ${Date.now() - __t0} ms since the wait began`); // Batch F diagnostic: removed before merge
   });
   it("S8: a paired hello while code mode is off has exactly reason, message, folderName", async () => {
     // Spec: item 3 and S8.
@@ -822,7 +812,6 @@ describe("fix round 4 (T4-1): the one-turn guard holds a folder by device:inode 
     const { b, ws, pid, ctl, first } = await liveInP1("T4a", ["p1"]);
     replace(path.join(ws, "p1"));
     const second = await turn(b, { ...code("hello"), project: "p1" });
-    if (second.status !== 429) console.log(`[T4A] Batch F diagnostic: removed before merge: second turn got ${second.status} body=${JSON.stringify(second.json)} text=${String(second.text).slice(0, 200)} pids=${JSON.stringify(pids())}`);
     expect(second.status).toBe(429);
     expect(second.json.code).toBe("CodeTurnRunning");
     expect(second.json.ownTurn).toBe(true);

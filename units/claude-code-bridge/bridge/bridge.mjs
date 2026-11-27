@@ -1045,26 +1045,11 @@ const CLOSE_GRACE_MS = 250;
  * stop must not wait that long. The look is still taken, because it finds processes that left the tree; it just cannot hold the stop.
  */
 const SNAPSHOT_CAP_MS = 1500;
-// Batch F diagnostic: removed before merge. X2A timing lines for what bridge.close() and the Stop route wait on.
-const X2A_T0 = Date.now();
-const x2a = (m) => { try {
-    console.error(`[X2A] +${Date.now() - X2A_T0}ms ${m}`);
-}
-catch { /* diagnostic only */ } };
 const realListRun = (file, args, env) => new Promise((resolve) => {
     execFile(file, args, { timeout: 20000, maxBuffer: 64 * 1024 * 1024, env, windowsHide: true }, (err, stdout) => resolve(err ? null : String(stdout)));
 });
 /** All live processes by absolute program and a minimal environment. Null: it could not be read. */
 export async function listProcs(platform, env = process.env, run = realListRun) {
-    const __t = Date.now(); // Batch F diagnostic: removed before merge
-    try {
-        return await listProcs0(platform, env, run);
-    }
-    finally {
-        x2a(`listProcs(${platform}) took ${Date.now() - __t} ms`);
-    }
-}
-async function listProcs0(platform, env, run) {
     if (platform === "win32") {
         const out = await run(windowsPowerShell(env), ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_PROC_SCRIPT], dialogEnv("win32", env));
         return out === null ? null : parseWinProcs(out);
@@ -1181,10 +1166,7 @@ export function killChild(child, env = process.env, o = {}) {
             return resolve();
         }
         try {
-            const __t = Date.now(); // Batch F diagnostic: removed before merge
-            x2a(`killChild: taskkill /PID ${pid} /T /F starts`);
             run(path.win32.join(root, "System32", "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], { windowsHide: true }, (err) => {
-                x2a(`killChild: taskkill for ${pid} returned after ${Date.now() - __t} ms, err=${err ? String(err.message).slice(0, 120) : "none"}`);
                 if (err)
                     child.kill(); // taskkill could not run, or the process is already gone
                 resolve();
@@ -3365,11 +3347,9 @@ export function createBridge(opts = {}) {
     /** Stops a child (and its group). A tracked code child is looked at first, so what it started is known before the group is gone and its children are re-parented. */
     const stopChild = async (c) => {
         const tr = c?.pid !== undefined ? tracks.get(c.pid) : undefined;
-        x2a(`stopChild pid=${c?.pid} method=${platform === "win32" ? "taskkill /T /F" : "group SIGTERM then SIGKILL"} exitCode=${c?.exitCode}`);
         if (tr && platform !== "win32")
             await Promise.race([snapshotTrack(tr), new Promise((r) => setTimeout(r, SNAPSHOT_CAP_MS).unref())]); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
-        const __t = Date.now(); // Batch F diagnostic: removed before merge
-        return killChild(c, env, { ...opts.platformOpts, graceMs: opts.killGraceMs }).then(() => x2a(`stopChild pid=${c?.pid}: killChild settled after ${Date.now() - __t} ms`));
+        return killChild(c, env, { ...opts.platformOpts, graceMs: opts.killGraceMs });
     };
     /**
      * Code-turn children that are still alive, kept apart from the turns table (a turn leaves the table the moment its page hangs up, while its
@@ -3420,16 +3400,6 @@ export function createBridge(opts = {}) {
         }
     };
     async function snapshotTrack(tr) {
-        const __t = Date.now(); // Batch F diagnostic: removed before merge
-        x2a(`snapshotTrack(${tr.pid}) starts: listing command = ${platform === "win32" ? `${windowsPowerShell(env)} -NoProfile -NonInteractive -Command <WINDOWS_PROC_SCRIPT>` : "/bin/ps -A -o pid=,ppid=,lstart="}`);
-        try {
-            await snapshotTrack0(tr);
-        }
-        finally {
-            x2a(`snapshotTrack(${tr.pid}) ends after ${Date.now() - __t} ms`);
-        }
-    }
-    async function snapshotTrack0(tr) {
         const rows = await procList();
         if (!rows)
             return;
@@ -3492,26 +3462,20 @@ export function createBridge(opts = {}) {
     }
     /** Everything recorded below this install's code turns, except the turns in `except`: a fresh look first, then SIGTERM, SIGKILL, a wait. Returns how many are still alive. */
     async function killAllTracked(except = new Set()) {
-        x2a(`killAllTracked starts, tracks=${tracks.size}`);
         for (const tr of [...tracks.values()]) {
             if (except.has(tr.pid))
                 continue;
-            const __t = Date.now(); // Batch F diagnostic: removed before merge
             let timer;
             const capped = await Promise.race([snapshotTrack(tr).then(() => false, () => false), new Promise((r) => { timer = setTimeout(() => r(true), SNAPSHOT_CAP_MS); timer.unref(); })]);
             clearTimeout(timer);
             if (capped)
                 log(`close: process listing took over ${SNAPSHOT_CAP_MS} ms; killed the tracked tree only`);
-            x2a(`killAllTracked: snapshotTrack(${tr.pid}) took ${Date.now() - __t} ms, capped=${capped}`);
         }
         const entries = [];
         for (const tr of tracks.values())
             if (!except.has(tr.pid))
                 entries.push(...tr.desc);
-        const __k = Date.now();
-        const __r = await killEntries(entries);
-        x2a(`killAllTracked: killEntries(${entries.length} entries) took ${Date.now() - __k} ms, left=${__r}`);
-        return __r;
+        return killEntries(entries);
     }
     let snapTimer = null;
     function ensureSnapTimer() {
@@ -4692,12 +4656,6 @@ export function createBridge(opts = {}) {
                     liveFolder.set(child.pid, { path: guardPath(scope.path), id: scope.id });
             }
             turn.child = child;
-            { // Batch F diagnostic: removed before merge
-                const __s = Date.now();
-                x2a(`spawn: pid=${child.pid} code=${turn.code} command=${launch.command} prefix=${JSON.stringify(launch.prefix)} shell=false (no shell option) detached=${turn.code && platform !== "win32"}`);
-                child.on("exit", (c, sg) => x2a(`child ${child.pid} 'exit' code=${c} signal=${sg} after ${Date.now() - __s} ms`));
-                child.on("close", (c, sg) => x2a(`child ${child.pid} 'close' code=${c} signal=${sg} after ${Date.now() - __s} ms`));
-            }
             let buf = "";
             let stderr = "";
             let model = "";
@@ -6085,7 +6043,6 @@ export function createBridge(opts = {}) {
                     h.closed = true;
                     void stopChild(h.child);
                 }
-                x2a(`POST /v1/turn/cancel: stopping child pid=${t.child?.pid}`);
                 void stopChild(t.child);
                 return json(res, 200, { cancelled: true });
             }
@@ -6251,11 +6208,9 @@ export function createBridge(opts = {}) {
     };
     const closeBridge = () => {
         bridgeClosing = true; // from here no preview starts, even on a connection that is still open
-        x2a(`closeBridge starts: turns=${turns.size} liveGroups=${liveGroups.size} platform=${platform}`);
-        const previewsClosed = closeAllPreviews().then(() => x2a("closeBridge: closeAllPreviews done"));
-        const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => x2a("closeBridge: all stopChild done")).then(() => killAllTracked()).then(() => x2a("closeBridge: killAllTracked done")).then(() => previewsClosed);
+        const previewsClosed = closeAllPreviews();
+        const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => previewsClosed);
         return stopped.then(() => new Promise((resolve) => {
-            x2a("closeBridge: server.close() called");
             // The children are dead by now, so a response still open belongs to a dead turn. server.close() closes only the connections that are idle
             // at the moment it is called, so close those first, and give a response that is finishing its last write a short grace before cutting the rest.
             // (closeIdleConnections / closeAllConnections exist from Node 18.2; the unit allows Node >=18, so each is checked.)
@@ -6263,7 +6218,7 @@ export function createBridge(opts = {}) {
                 server.closeIdleConnections();
             const cut = setTimeout(() => { if (typeof server.closeAllConnections === "function")
                 server.closeAllConnections(); }, CLOSE_GRACE_MS);
-            server.close(() => { clearTimeout(cut); x2a("closeBridge: server.close() callback"); releaseLock(); resolve(); });
+            server.close(() => { clearTimeout(cut); releaseLock(); resolve(); });
         }));
     };
     const server = http.createServer((req, res) => {

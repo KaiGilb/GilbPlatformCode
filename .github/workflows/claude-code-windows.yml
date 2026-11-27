@@ -38,22 +38,12 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm ci
-      # Batch F diagnostic: removed before merge. Why does `git init` fail in POST /v1/projects/create on Windows? Measures only.
-      - name: Batch F diagnostic - git init variants
-        run: node scripts/diag-git-init.mjs
       - name: Build the bridge and confirm the committed file is the build
         run: |
           npm run build:bridge
           git diff --exit-code -- bridge
       - run: npm run typecheck
-      # Batch F diagnostic: removed before merge. Per-test durations for the slow-runner tests, kept as a junit file artifact.
-      - run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=vitest-junit-${{ matrix.node }}.xml
-      - name: Batch F diagnostic - upload durations
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: batchF-junit-windows-node${{ matrix.node }}-run${{ github.run_attempt }}
-          path: units/claude-code-bridge/vitest-junit-${{ matrix.node }}.xml
+      - run: npm test
       - name: End to end on Windows (real bridge process, pair, one turn, Stop)
         run: npm run test:windows-e2e
       - name: Always On end to end (install, restart after taskkill, uninstall) as the runner's administrator
@@ -105,13 +95,6 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      # Batch F diagnostic: removed before merge. Same per-test durations on macOS.
-      - run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=vitest-junit-macos.xml
-      - name: Batch F diagnostic - upload durations
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: batchF-junit-macos
-          path: units/claude-code-bridge/vitest-junit-macos.xml
+      - run: npm test
       - name: End to end (same script, stand-in claude by path)
         run: npm run test:windows-e2e

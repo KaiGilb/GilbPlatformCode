@@ -434,23 +434,18 @@ describe("snapshot: the event loop", () => {
     fs.mkdirSync(path.join(p, "dist", "many"));
     for (let i = 0; i < 4_990; i++) fs.writeFileSync(path.join(p, "dist", "many", `f${i}`), "x");
     const waits = [];
-    const ends = []; // Batch F diagnostic: removed before merge (the time each answer arrived, for the largest gap between answers)
     let polling = true;
     const poll = (async () => {
       while (polling) {
         const t = Date.now();
         await fetch(`${base}/v1/check`, { method: "POST", headers: { "x-bridge-secret": secret, origin: APP } }).then((r) => r.text());
         waits.push(Date.now() - t);
-        ends.push(Date.now()); // Batch F diagnostic: removed before merge
         await sleep(20);
       }
     })();
     const r = await open("app");
     polling = false;
     await poll;
-    // Batch F diagnostic: removed before merge. Largest gap between two answers (includes the 20 ms sleep), and the 5 slowest answers.
-    const gaps = ends.slice(1).map((e, i) => e - ends[i]);
-    console.log(`Batch F diagnostic (removed before merge): preview largest gap between answers ${Math.max(0, ...gaps)} ms, slowest 5 waits ${JSON.stringify([...waits].sort((a, b) => b - a).slice(0, 5))}, first answer to last ${ends.length ? ends[ends.length - 1] - ends[0] : 0} ms`);
     waits.sort((a, b) => a - b);
     const max = waits[waits.length - 1];
     const p95 = waits[Math.floor(waits.length * 0.95)];

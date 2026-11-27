@@ -151,18 +151,12 @@ describe("POST /v1/workspace/open", () => {
     const ws = mkWs();
     const secret = await start({ workspace: ws });
     const running = fetch(`${base}/v1/turn`, { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify({ system: "s", prompt: "WAITFOREVER", mode: "code" }) }).then((r) => r.text()).catch(() => {});
-    const __t0 = Date.now(); // Batch F diagnostic: removed before merge
     for (let i = 0; i < 100 && !(fs.existsSync(logFile) && fs.readFileSync(logFile, "utf8").includes('"run"')); i++) await new Promise((r) => setTimeout(r, 50));
-    console.log(`Batch F diagnostic (removed before merge): openFolder wait for first run log: ${Date.now() - __t0} ms, ${Date.now() - __t0 >= 4900 ? "TIMED OUT" : "ok"}`);
-    const __o = await open(secret);
-    console.log(`Batch F diagnostic (removed before merge): openFolder open() answered at ${Date.now() - __t0} ms since the wait began`); // Batch F diagnostic: removed before merge
-    expect(__o).toEqual({ status: 200, json: { opened: true } });
+    expect(await open(secret)).toEqual({ status: 200, json: { opened: true } });
     expect(opened).toEqual([path.resolve(ws)]);
     bridge.server.closeAllConnections?.();
     await bridge.close();
-    console.log(`Batch F diagnostic (removed before merge): openFolder bridge.close() done at ${Date.now() - __t0} ms since the wait began`); // Batch F diagnostic: removed before merge
     await running;
-    console.log(`Batch F diagnostic (removed before merge): openFolder running settled at ${Date.now() - __t0} ms since the wait began`); // Batch F diagnostic: removed before merge
   });
 });
 
