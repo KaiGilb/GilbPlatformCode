@@ -3435,9 +3435,54 @@ function waitChildGone(child, ms) {
 // the turn and takes one more look before it signals anything. Then it signals the group and each pid in that snapshot.
 /** How often a live Codex child's descendants are looked at (Mac and Linux). A descendant that lives shorter than this and is gone before the stop is not missed: it is gone. */
 export const CODEX_TREE_LOOK_MS = 200;
-/** A process list that takes longer than this is not waited for at a stop. */
+/**
+ * How long one read of the process list is waited for, at a stop and in the watch. A read that takes longer counts as unreadable.
+ * Decision: 1500 ms. One `ps -A` took about 18 ms of CPU on a loaded Mac (tester round 9 measured it), so 1500 ms is far above
+ * a slow but healthy read, and it is below the 2000 ms kill grace, so a hung `ps` delays a stop by at most this much per read (two reads: 3 s)
+ * and the group signal still goes out.
+ */
 const CODEX_TREE_LIST_MS = 1500;
 const CODEX_TREE = Symbol("codexTree");
+let codexTreeListSeam;
+/**
+ * Test seam: replaces the process list that every Codex stop and watch reads (the real `ps` is never touched). Undefined puts the real list back.
+ * @param list The replacement. It may throw, reject, hang or return junk: the readers cope with all four.
+ */
+export function setCodexTreeListForTests(list) {
+    codexTreeListSeam = list;
+}
+const isProcRow = (r) => {
+    const o = r;
+    return typeof o === "object" && o !== null && Number.isInteger(o.pid) && Number.isInteger(o.ppid) && typeof o.start === "string";
+};
+/**
+ * Reads a process list for the Codex stop and watch, and never fails: a throw (also a synchronous one, such as `spawn EPERM`), a rejection, a read
+ * that takes longer than `boundMs` and a reply that is not a list all give null; a list with junk entries keeps only its well-formed rows.
+ * Decision: the failure is handled here and not in `listProcs`, because the Claude code-turn tracker shares `listProcs` and its behaviour must not change.
+ * The bound timer is unref'd (it never keeps the process alive) and cleared as soon as the read is over (it never fires after the stop has finished).
+ * @param read Gives the list.
+ * @param boundMs Longest wait for one read.
+ * @returns The well-formed rows, or null when the list could not be read in time.
+ */
+async function readProcsSafely(read, boundMs) {
+    let timer;
+    try {
+        const bound = new Promise((resolve) => {
+            timer = setTimeout(() => resolve(null), boundMs);
+            timer.unref();
+        });
+        // `Promise.resolve().then(read)` also turns a synchronous throw into a rejection. The race keeps a late rejection from being unhandled.
+        const out = await Promise.race([Promise.resolve().then(read), bound]);
+        return Array.isArray(out) ? out.filter(isProcRow) : null;
+    }
+    catch {
+        return null;
+    }
+    finally {
+        if (timer)
+            clearTimeout(timer);
+    }
+}
 let ownPgidCache;
 /** The bridge's own process group id (ps), read once. Null when ps cannot say. */
 function ownPgidNow() {
@@ -3477,7 +3522,8 @@ function mergeCodexSeen(seen, rows, root, rootGone) {
  * A pid that is already gone (ESRCH) is not an error. Never signalled: pid 0 or below, pid 1, the bridge's own pid, the bridge's own group,
  * and any pid that is not in the snapshot. Known limits: a pid can be reused between the snapshot and the SIGKILL (the start time is checked
  * again just before it, which narrows that but does not close it); a descendant that starts after the snapshot is missed; one that reparented
- * before the first look is missed; when the process list cannot be read, only the group is signalled.
+ * before the first look is missed; when the process list cannot be read (it throws, rejects, takes longer than {@link CODEX_TREE_LIST_MS}, or is not a list),
+ * only the group is signalled and this function still resolves.
  * @param groupPid The Codex child's pid, which is also its process group id. Undefined: no group.
  * @param seen What the turn saw below the child (may be empty).
  * @param graceMs Wait between SIGTERM and SIGKILL.
@@ -3489,7 +3535,8 @@ export async function endCodexTree(groupPid, seen, graceMs, deps = {}, childExit
     const kill = deps.kill ?? ((pid, sig) => { process.kill(pid, sig); });
     const ownPid = deps.ownPid ?? process.pid;
     const ownPgid = deps.ownPgid !== undefined ? deps.ownPgid : ownPgidNow();
-    const list = deps.list ?? (async () => Promise.race([listProcs(process.platform), new Promise((r) => setTimeout(() => r(null), CODEX_TREE_LIST_MS).unref())]));
+    const source = deps.list ?? codexTreeListSeam ?? (() => listProcs(process.platform));
+    const list = () => readProcsSafely(source, deps.listBoundMs ?? CODEX_TREE_LIST_MS);
     // The one place that decides what may be signalled: a whole number above 1 that is neither this process nor this process's group.
     // A Codex descendant can never be the bridge's group leader (that is the bridge or one of its parents), so refusing that number as a pid costs nothing.
     const okPid = (n) => typeof n === "number" && Number.isInteger(n) && n > 1 && n !== ownPid && n !== ownPgid;
@@ -3547,22 +3594,33 @@ export async function endCodexTree(groupPid, seen, graceMs, deps = {}, childExit
     await waitGone(3000);
     return members();
 }
-/** Starts the periodic look at a Codex child's descendants (Mac and Linux). The timer does not keep the process alive. */
-function watchCodexTree(child) {
+/**
+ * Starts the periodic look at a Codex child's descendants (Mac and Linux). The timer does not keep the process alive.
+ * A look that cannot read the list (throws, rejects, hangs past the bound, or returns junk) changes nothing and the next look runs as usual.
+ * @param child The Codex child.
+ * @param deps The list and the timings. Tests replace them.
+ * @returns What the watch keeps, or undefined on Windows or when the child has no pid.
+ */
+export function watchCodexTree(child, deps = {}) {
     const pid = child.pid;
     if (process.platform === "win32" || pid === undefined)
-        return;
+        return undefined;
     const tree = { seen: new Map(), timer: undefined };
     let busy = false;
     tree.timer = setInterval(() => {
         if (busy)
             return;
         busy = true;
-        void listProcs(process.platform).then((rows) => { if (rows)
-            mergeCodexSeen(tree.seen, rows, pid, childGone(child)); }, () => { }).finally(() => { busy = false; });
-    }, CODEX_TREE_LOOK_MS);
+        const source = deps.list ?? codexTreeListSeam ?? (() => listProcs(process.platform));
+        void readProcsSafely(source, deps.boundMs ?? CODEX_TREE_LIST_MS)
+            .then((rows) => { if (rows)
+            mergeCodexSeen(tree.seen, rows, pid, childGone(child)); })
+            .catch(() => { })
+            .finally(() => { busy = false; });
+    }, deps.lookMs ?? CODEX_TREE_LOOK_MS);
     tree.timer.unref();
     child[CODEX_TREE] = tree;
+    return tree;
 }
 /**
  * Stops one Codex child. Off Windows the child leads its own process group, and everything below it is ended too ({@link endCodexTree}): a snapshot of its

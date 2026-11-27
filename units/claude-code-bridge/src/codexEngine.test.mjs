@@ -1819,6 +1819,221 @@ describe("HK2-01 endCodexTree guards", () => {
   });
 });
 
+describe("L-1 a process list that cannot be read never stops the Codex stop or the watch (F-1)", () => {
+  // Spec: R9 F-1 / ruling L-1 — when the list throws, rejects, hangs or returns junk, only the group is signalled, the stop resolves, nothing is unhandled, the bridge stays up.
+  // The failures are injected through a seam (the list callback, or setCodexTreeListForTests): the real /bin/ps is never changed.
+  // The EPERM case copies a measurement: QA round 9 (tester), this Mac, 2026-11-27 16:00 UTC, a sandbox that denies exec of /bin/ps made execFile throw `spawn EPERM` at once.
+  const OWN_PID = 900;
+  const OWN_PGID = 800;
+  const GROUP = 500;
+  const eperm = () => Object.assign(new Error("spawn EPERM"), { code: "EPERM", syscall: "spawn" });
+  const PS_HEADER = "  PID  PPID STARTED\n";
+  /** The four ways a list cannot be used. `list` is what the callback does; every one is a stand-in for what an unreadable /bin/ps does. */
+  const CASES = {
+    "(a) throws synchronously": { list: () => { throw eperm(); }, bound: 5000 },
+    "(b) rejects": { list: () => Promise.reject(eperm()), bound: 5000 },
+    "(c) hangs past the bound": { list: () => new Promise(() => {}), bound: 120 },
+    "(d1) returns non-ps text through the real parser": { list: () => listProcsFromText("this is not ps output\nsegmentation fault\n"), bound: 5000 },
+    "(d2) returns empty output through the real parser": { list: () => listProcsFromText(""), bound: 5000 },
+    "(d3) returns truncated lines through the real parser": { list: () => listProcsFromText(PS_HEADER + "  501   500 Fri Nov 27 15:\n  502\n   503   501 Fri Nov"), bound: 5000 },
+    "(d4) returns something that is not a list": { list: () => Promise.resolve("garbage"), bound: 5000 },
+    "(d5) returns a list with junk entries": { list: () => Promise.resolve([null, 7, "x", { pid: "5", ppid: 1, start: "s" }, { pid: 501, ppid: GROUP }]), bound: 5000 },
+  };
+  /** Runs the real list parser on text, the way an unreadable `ps` would hand it garbage. */
+  const listProcsFromText = (text) => BridgeAll.listProcs("darwin", {}, async () => text);
+
+  /** Fails fast instead of hanging the file when the stop never resolves (the defect this guards against). */
+  const within = async (p, ms) => {
+    let timer;
+    try {
+      return await Promise.race([p, new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`the stop did not resolve within ${ms} ms`)), ms); })]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  /** Collects unhandled rejections while `fn` runs, and for a moment after it. */
+  async function noUnhandled(fn) {
+    const seen = [];
+    const on = (e) => seen.push(e);
+    process.on("unhandledRejection", on);
+    try {
+      await fn();
+      await delay(200);
+    } finally {
+      process.off("unhandledRejection", on);
+    }
+    expect(seen).toEqual([]);
+  }
+
+  describe("the stop, called directly", () => {
+    for (const [name, c] of Object.entries(CASES)) {
+      it(`${name}: resolves, signals the group, leaves no unhandled rejection`, async () => {
+        const m = { calls: [] };
+        // The group answers signal 0 while it lives and ESRCH after SIGTERM, so the stop goes on to SIGTERM.
+        const live = new Set([GROUP]);
+        const kill = (pid, sig) => {
+          m.calls.push([pid, sig]);
+          if (sig === 0 && !live.has(Math.abs(pid))) throw Object.assign(new Error("kill ESRCH"), { code: "ESRCH" });
+          if (sig === "SIGTERM" || sig === "SIGKILL") live.delete(Math.abs(pid));
+        };
+        await noUnhandled(async () => {
+          await within(endCodexTree(GROUP, new Map(), 40, { kill, list: c.list, ownPid: OWN_PID, ownPgid: OWN_PGID, listBoundMs: c.bound }), 8000);
+        });
+        expect(m.calls.some(([pid, sig]) => pid === -GROUP && sig === "SIGTERM")).toBe(true);
+        // Only the group: no other pid is signalled when the list is unusable.
+        expect(m.calls.filter(([, sig]) => sig !== 0).every(([pid]) => pid === -GROUP)).toBe(true);
+      });
+    }
+
+    it("(c) the bound timer is unref'd, and it is cleared once the stop has resolved (it never fires after the stop)", async () => {
+      const made = [];
+      const cleared = [];
+      const realSet = globalThis.setTimeout;
+      const realClear = globalThis.clearTimeout;
+      globalThis.setTimeout = (fn, ms, ...a) => { const h = realSet(fn, ms, ...a); if (ms === 777) made.push(h); return h; };
+      globalThis.clearTimeout = (h) => { cleared.push(h); return realClear(h); };
+      try {
+        const live = new Set([GROUP]);
+        const kill = (pid, sig) => {
+          if (sig === 0 && !live.has(Math.abs(pid))) throw Object.assign(new Error("kill ESRCH"), { code: "ESRCH" });
+          if (sig === "SIGTERM" || sig === "SIGKILL") live.delete(Math.abs(pid));
+        };
+        await within(endCodexTree(GROUP, new Map(), 40, { kill, list: () => new Promise(() => {}), ownPid: OWN_PID, ownPgid: OWN_PGID, listBoundMs: 777 }), 8000);
+      } finally {
+        globalThis.setTimeout = realSet;
+        globalThis.clearTimeout = realClear;
+      }
+      expect(made.length).toBeGreaterThan(0);
+      for (const h of made) {
+        expect(h.hasRef()).toBe(false);
+        expect(cleared).toContain(h);
+      }
+    });
+  });
+
+  describe("the bridge stays up and still ends the group (embedded through createBridge)", () => {
+    afterEach(() => { BridgeAll.setCodexTreeListForTests?.(undefined); });
+    const endByPid = (pid) => { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } };
+    const esrch = (pid) => {
+      try { process.kill(pid, 0); return false; } catch (e) { return e?.code === "ESRCH"; }
+    };
+
+    for (const [name, c] of Object.entries(CASES)) {
+      it(`${name}: the turn ends, the group is signalled, no unhandled rejection, hello still answers`, async (ctx) => {
+        if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
+        BridgeAll.setCodexTreeListForTests(c.list);
+        let g;
+        try {
+          await noUnhandled(async () => {
+            await startBridge({ opts: { killGraceMs: 400 } });
+            const r = await turn(secret, { engine: "codex", prompt: "GRANDKIDS-OK SETPGID" });
+            expect(r.error).toBeUndefined();
+            expect(r.message).toBeTruthy();
+            await until(() => grandkids0()?.setpgid);
+            g = grandkids0();
+            // The group signal alone ends the plain and the background helper: they stay in the stand-in's group.
+            await until(() => esrch(g.plain) && esrch(g.background), 10_000);
+            const hello = await fetch(`${base}/v1/hello`, { headers: { "x-bridge-secret": secret } });
+            expect(hello.status).toBe(200);
+            expect((await hello.json()).bridge).toBe("gilb-claude-code-bridge");
+          });
+        } finally {
+          // The setsid and setpgid helpers are outside the group: only the snapshot reaches them, and the snapshot needs the list. Ended by pid here.
+          if (g) for (const pid of [g.plain, g.background, g.session, g.setpgid]) if (pid) endByPid(pid);
+        }
+      }, 40_000);
+    }
+    const grandkids0 = () => rows().find((row) => row.event === "grandkids");
+
+    it("a cancel from the page ends the turn when the list throws, and the page gets its error event", async (ctx) => {
+      if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
+      BridgeAll.setCodexTreeListForTests(CASES["(a) throws synchronously"].list);
+      let g;
+      try {
+        await noUnhandled(async () => {
+          await startBridge({ opts: { killGraceMs: 400 } });
+          const live = await openTurn(secret, { engine: "codex", prompt: "GRANDKIDS SETPGID" });
+          await until(() => grandkids0()?.setpgid);
+          g = grandkids0();
+          expect((await api(secret, "/v1/turn/cancel", { turnId: live.turnId })).json).toEqual({ cancelled: true });
+          await until(() => live.events.some((e) => e[0] === "error"));
+          await until(() => esrch(g.plain) && esrch(g.background), 10_000);
+        });
+      } finally {
+        if (g) for (const pid of [g.plain, g.background, g.session, g.setpgid]) if (pid) endByPid(pid);
+      }
+    }, 40_000);
+  });
+
+  describe("the descendant watch", () => {
+    it("meets a list that throws, rejects, hangs and returns junk, and keeps running: the next good list is merged", async (ctx) => {
+      if (process.platform === "win32") ctx.skip("skipped on Windows: the watch is off there.");
+      const start = "Fri Nov 27 15:00:00 2026";
+      const fakeChild = { pid: 4242, exitCode: null, signalCode: null };
+      const good = [{ pid: 4242, ppid: 1, start }, { pid: 4300, ppid: 4242, start }];
+      let n = 0;
+      const steps = [
+        () => { throw eperm(); },
+        () => Promise.reject(eperm()),
+        () => new Promise(() => {}),
+        () => Promise.resolve("garbage"),
+        () => Promise.resolve(good),
+      ];
+      const list = () => steps[Math.min(n++, steps.length - 1)]();
+      let tree;
+      await noUnhandled(async () => {
+        tree = BridgeAll.watchCodexTree(fakeChild, { list, lookMs: 10, boundMs: 40 });
+        try {
+          await until(() => tree.seen.has(4300), 5000);
+        } finally {
+          clearInterval(tree.timer);
+        }
+      });
+      expect(n).toBeGreaterThanOrEqual(5); // it asked again after every failure
+      expect(tree.seen.get(4300)).toEqual({ pid: 4300, ppid: 4242, start });
+    });
+  });
+
+  describe("the CLI bridge where exec of /bin/ps is refused (a real EPERM, macOS sandbox)", () => {
+    it("starts, answers hello, runs a turn and is still up 4 s later (elsewhere: the same run with ps readable, as a control)", async () => {
+      // Measured by the tester, QA round 9, this Mac, 2026-11-27 16:00 UTC: at 4dfa5508 this bridge exited with code 1 about 200 ms after start.
+      // Only macOS sandbox-exec can refuse the exec of /bin/ps for one run without touching the machine. Where it is missing the run is the control (ps works), and it is not a proof of F-1.
+      const sandboxed = process.platform === "darwin" && fs.existsSync("/usr/bin/sandbox-exec");
+      const state = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-l1-cli-"));
+      fs.mkdirSync(path.join(state, "codex-home"), { recursive: true });
+      const net = await import("node:net");
+      const port = await new Promise((r) => { const sv = net.createServer(); sv.listen(0, "127.0.0.1", () => { const p = sv.address().port; sv.close(() => r(p)); }); });
+      const profile = '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))';
+      const bridgeArgs = [process.execPath, BUILT, "--port", String(port), "--claude", FAKE_CLAUDE, "--codex", FAKE_CODEX, "--state-dir", state, "--allow-origin", APP];
+      const child = spawn(sandboxed ? "/usr/bin/sandbox-exec" : bridgeArgs[0], sandboxed ? ["-p", profile, ...bridgeArgs] : bridgeArgs.slice(1), {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, HOME: state, CODEX_HOME: path.join(state, "codex-home") },
+      });
+      let out = "";
+      let exited = null;
+      child.stdout.on("data", (d) => { out += d; });
+      child.stderr.on("data", (d) => { out += d; });
+      child.on("exit", (code, sig) => { exited = { code, sig }; });
+      try {
+        await until(() => /Pairing code: (\S+)/.test(out), 10_000);
+        const code = /Pairing code: (\S+)/.exec(out)[1];
+        const pair = await fetch(`http://127.0.0.1:${port}/v1/pair`, { method: "POST", headers: { "content-type": "application/json", origin: APP }, body: JSON.stringify({ code }) });
+        const sec = (await pair.json()).secret;
+        const res = await fetch(`http://127.0.0.1:${port}/v1/turn`, { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": sec, origin: APP }, body: JSON.stringify({ system: "s", prompt: "hello", engine: "codex" }) });
+        expect(res.status).toBe(200);
+        expect(await res.text()).toContain("event: message");
+        await delay(4000);
+        expect(exited).toBeNull();
+        expect((await fetch(`http://127.0.0.1:${port}/v1/hello`)).status).toBe(200);
+      } finally {
+        if (exited === null) { try { process.kill(child.pid, "SIGTERM"); } catch { /* gone */ } }
+        await until(() => exited !== null, 8000).catch(() => { try { process.kill(child.pid, "SIGKILL"); } catch { /* gone */ } });
+        fs.rmSync(state, { recursive: true, force: true });
+      }
+    }, 40_000);
+  });
+});
+
 describe("K-2 a person's OpenTelemetry export is off in a chat turn", () => {
   // Spec: K-2 — the stand-in's [otel] shape and its "none" are guesses (fake-codex.mjs); the setting names and the value "none" are from the Codex config reference, read 2026-11-27.
   const personOtel = (url) => `[otel]\nlog_user_prompt = true\nexporter = { otlp-http = { endpoint = "${url}/v1/logs", protocol = "json" } }\n`;
