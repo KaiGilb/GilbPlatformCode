@@ -302,10 +302,34 @@ describe("POST /v1/projects/create makes a git repo (friction 47)", () => {
     try {
       await start({ env: { GIT_TEMPLATE_DIR: tpl } });
       expect((await api("/v1/projects/create", { name: "alpha" })).status).toBe(200);
+      expect(fs.statSync(path.join(ws, "alpha", ".git")).isDirectory()).toBe(true); // a missing repo must not pass as "no hooks"
       const hooks = path.join(ws, "alpha", ".git", "hooks");
       expect(fs.existsSync(hooks) ? fs.readdirSync(hooks) : []).toEqual([]);
     } finally {
       fs.rmSync(tpl, { recursive: true, force: true });
+    }
+  });
+
+  // Spec: friction #47 — the person's global git config is not read: its init.defaultBranch and core.hooksPath do not shape the new repo.
+  it("the person's global git config is not read", async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-gcfg-"));
+    const hookDir = path.join(home, "globalhooks");
+    fs.mkdirSync(hookDir);
+    fs.writeFileSync(path.join(hookDir, "pre-commit"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    // git reads forward slashes on every platform, and a backslash in a config value would be an escape
+    const hookPath = hookDir.replace(/\\/g, "/");
+    fs.writeFileSync(path.join(home, ".gitconfig"), `[init]\n\tdefaultBranch = leakedfromglobal\n[core]\n\thooksPath = ${hookPath}\n`);
+    try {
+      await start({ env: { HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, "xdg") } });
+      expect((await api("/v1/projects/create", { name: "alpha" })).status).toBe(200);
+      const g = path.join(ws, "alpha", ".git");
+      expect(fs.readFileSync(path.join(g, "HEAD"), "utf8")).not.toContain("leakedfromglobal");
+      const cfg = fs.readFileSync(path.join(g, "config"), "utf8");
+      expect(cfg).not.toContain("leakedfromglobal");
+      expect(cfg).not.toContain(hookPath);
+      expect(fs.existsSync(path.join(g, "hooks")) ? fs.readdirSync(path.join(g, "hooks")) : []).toEqual([]);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
     }
   });
 

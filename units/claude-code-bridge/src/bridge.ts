@@ -280,7 +280,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.24";
+export const BRIDGE_BUILD = "0.3.25";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -5073,13 +5073,19 @@ export function createBridge(opts: BridgeOptions = {}) {
     // info/attributes (gitPlaces) covers it: that deny is computed from repos that exist when a turn starts.
     // `--template=` copies no template, so no hooks arrive from the person's git setup; the config files of the person
     // are not read, and `core.hooksPath` is pinned off, so nothing in the environment can add a hook either.
+    // GIT_CONFIG_GLOBAL points at an empty place so the person's global git config is not read (their init.defaultBranch, core.hooksPath
+    // or any other setting must not shape this repo). On Windows that place is "NUL", not os.devNull: os.devNull there is `\\.\nul`, and
+    // Git for Windows 2.56.1 cannot open it ("fatal: unable to access '\\.\nul': Invalid argument", measured on GitHub's Windows runner,
+    // run 46016776658), so git init failed and no repo was made. Git's own words go into the log line below.
     try {
       execFileSync("git", ["-c", "core.hooksPath=/dev/null", "init", "--quiet", "--template=", path.join(workspace.path, name)], {
-        stdio: "ignore", timeout: 10_000,
-        env: { ...env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: "1", GIT_TEMPLATE_DIR: "" },
+        stdio: ["ignore", "ignore", "pipe"], timeout: 10_000, encoding: "utf8",
+        env: { ...env, GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : os.devNull, GIT_CONFIG_NOSYSTEM: "1", GIT_TEMPLATE_DIR: "" },
       });
     } catch (e) {
-      log(`project ${name}: git init failed: ${(e as ErrLike)?.code ?? (e as ErrLike)?.message ?? e}`);
+      const err = e as ErrLike & { status?: number | null; stderr?: unknown };
+      const words = typeof err.stderr === "string" ? err.stderr.trim().slice(0, 300) : "";
+      log(`project ${name}: git init failed: ${err.status ?? err.code ?? err.message ?? e}${words ? `: ${words}` : ""}`);
     }
     opts.beforeProjectNpmrc?.(path.join(workspace.path, name));
     let npmrc = false;
