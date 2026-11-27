@@ -6,7 +6,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { BRIDGE_BUILD, buildPlist, createBridge, isSupervised, updateSignedText } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
@@ -335,6 +335,41 @@ describe("SU-5a: no turn during an update, and a clean exit", () => {
     turn.ctl.abort(); // the turn ends
     await until(() => exits.length > 0);
     expect(exits).toEqual([[75, false]]);
+  });
+
+  // Spec: the restart's close() waits for chat children. The page hangs up, the turn leaves the table, and the restart goes on to close() and exit(75); the
+  // chat child (a stand-in that exits 800 ms after its first SIGTERM) must be gone when exit is called, or a new bridge.mjs could be put in place under it.
+  it("M1b the restart waits for the chat child to exit before exit 75", async () => {
+    const exits = [];
+    const alivePid = (pid) => {
+      if (process.platform !== "win32") { try { process.kill(pid, 0); return true; } catch { return false; } }
+      return execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/NH"], { encoding: "utf8" }).includes(` ${pid} `);
+    };
+    const logFile = path.join(os.tmpdir(), `su5a-m1c-${process.pid}.log`);
+    fs.rmSync(logFile, { force: true });
+    extraLogs.push(logFile);
+    let turn;
+    let pid = 0;
+    let aliveAtExit = null;
+    const secret = await start({
+      env: { GILB_BRIDGE_SUPERVISED: "1", FAKE_CLAUDE_LOG: logFile },
+      updateRestart: { pollMs: 20, capMs: 20000 },
+      exit: (c) => { aliveAtExit = alivePid(pid); exits.push([c, bridge.server.listening]); },
+      updateRun: async () => {
+        turn = await startTurn(secret, "SLOWEXIT800 WAITFOREVER");
+        await until(async () => (await turnCount(secret)) > 0);
+        await until(() => logRows(logFile, "run").length > 0);
+        pid = logRows(logFile, "run")[0].pid;
+        return { updated: true, from: BRIDGE_BUILD, to: "0.3.22" };
+      },
+    });
+    expect((await post(secret)).json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.22", restart: "automatic" });
+    await new Promise((x) => setTimeout(x, 300));
+    expect(exits).toEqual([]);
+    turn.ctl.abort();
+    await until(() => exits.length > 0);
+    expect(exits).toEqual([[75, false]]);
+    expect(aliveAtExit).toBe(false); // the chat child had exited when exit(75) was called
   });
 
   it("M1b after the cap the running turn is stopped (its child gets SIGTERM), then exit 75", async () => {

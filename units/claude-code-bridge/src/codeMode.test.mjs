@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import net from "node:net";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { codeTurnSettings, computerSandboxSettings, createBridge, parseCli, resolveThroughLinks, validateWorkspace, CODE_TOOLS, WEB_TOOLS } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
@@ -219,6 +219,31 @@ describe("shutdown while a code turn runs", () => {
     const took = Date.now() - t0;
     bridge = undefined;
     await first.catch(() => {});
+    expect(took).toBeLessThan(process.platform === "win32" ? WINDOWS_CLOSE_BOUND_MS : 1000);
+  });
+
+  // Spec: close() waits for chat children to exit. A chat child whose page hung up is in neither the turns table nor the live groups; its stop is the
+  // unawaited one from the hang-up, so close() used to return while it was still ending (an update could then replace the file under it). The stand-in
+  // SLOWEXIT800 exits 800 ms after its first SIGTERM (longer than the 250 ms grace close() gives open connections, so a close that does not wait shows), which makes the order visible off Windows (a stand-in; on Windows taskkill ends it at once).
+  it("close() returns only after a chat turn's child (page already gone) has exited", async () => {
+    const listed = (pid) => {
+      if (process.platform !== "win32") { try { process.kill(pid, 0); return true; } catch { return false; } }
+      return execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/NH"], { encoding: "utf8" }).includes(` ${pid} `);
+    };
+    const secret = await start();
+    const ctl = new AbortController();
+    const hung = fetch(`${base}/v1/turn`, { method: "POST", signal: ctl.signal, headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify(T({ prompt: "SLOWEXIT800 WAITFOREVER" })) }).then((r) => r.text()).catch(() => {});
+    for (let i = 0; i < 100 && runs().length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    const pid = runs()[0].pid;
+    expect(listed(pid)).toBe(true);
+    ctl.abort(); // the page goes away; the bridge stops the child (unawaited)
+    await hung;
+    await new Promise((r) => setTimeout(r, 100)); // the bridge has seen the hang-up and sent the signal; the child is still ending
+    const t0 = Date.now();
+    await bridge.close();
+    const took = Date.now() - t0;
+    bridge = undefined;
+    expect(listed(pid)).toBe(false);
     expect(took).toBeLessThan(process.platform === "win32" ? WINDOWS_CLOSE_BOUND_MS : 1000);
   });
 });

@@ -49,7 +49,11 @@ process.stdin.on("end", async () => {
   const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
   // IGNORETERM: a child that takes its time to stop (the first SIGTERM is logged, the exit comes 3 s later), so a test can act in between.
   // IGNORETERMFOREVER: ignores SIGTERM for good, so only the bridge's own escalation (SIGKILL after its grace) can end it.
-  if (prompt.includes("IGNORETERMFOREVER")) {
+  // SLOWEXIT800: exits 800 ms after the first SIGTERM (a stand-in, to make "the child is gone when close() returns" visible off Windows).
+  if (prompt.includes("SLOWEXIT800")) {
+    process.removeAllListeners("SIGTERM");
+    process.on("SIGTERM", () => setTimeout(() => process.exit(143), 800));
+  } else if (prompt.includes("IGNORETERMFOREVER")) {
     process.removeAllListeners("SIGTERM");
     process.on("SIGTERM", () => log({ event: "sigterm-ignored" }));
   } else if (prompt.includes("IGNORETERM")) {

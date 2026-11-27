@@ -3385,6 +3385,12 @@ export function createBridge(opts = {}) {
      */
     const liveGroups = new Map();
     /**
+     * Chat children (and hand-offs) that have not exited. A chat child is in the turns table only while its page is there; after a hang-up it is in
+     * neither `turns` nor `liveGroups`, and its stop is the unawaited one from the hang-up. close() stops these too and waits for them to exit, inside
+     * its listing budget, so a bridge file replaced by an update, or a process that exits, is not left with a chat child still ending.
+     */
+    const liveChat = new Set();
+    /**
      * The folder each live code child was started in, by pid: so a new code turn in that folder waits for the child, not only for the turns table.
      * Both keys are taken when the child starts and never updated (not on a rename, not when the folder is deleted); they go only when the child
      * exits. The guard (codeChildAlive) holds a folder that matches either key.
@@ -4702,6 +4708,10 @@ export function createBridge(opts = {}) {
                     liveFolder.set(child.pid, { path: guardPath(scope.path), id: scope.id });
             }
             turn.child = child;
+            if (!turn.code) {
+                liveChat.add(child);
+                child.once("exit", () => liveChat.delete(child));
+            }
             let buf = "";
             let stderr = "";
             let model = "";
@@ -6257,7 +6267,14 @@ export function createBridge(opts = {}) {
         closeListingDeadline = Date.now() + SNAPSHOT_CAP_MS;
         closeCapLogged = false;
         const previewsClosed = closeAllPreviews();
-        const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => previewsClosed);
+        const stopChat = async (c) => {
+            if (c.exitCode !== null || c.signalCode !== null)
+                return;
+            const gone = new Promise((r) => c.once("exit", () => r()));
+            await stopChild(c);
+            await withinListingBudget(gone); // the same budget as the listings: a child that ignores the signal cannot hold close() longer
+        };
+        const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)), [...liveChat].map(stopChat))).then(() => killAllTracked()).then(() => previewsClosed);
         return stopped.then(() => new Promise((resolve) => {
             // The children are dead by now, so a response still open belongs to a dead turn. server.close() closes only the connections that are idle
             // at the moment it is called, so close those first, and give a response that is finishing its last write a short grace before cutting the rest.

@@ -746,8 +746,11 @@ describe("fix round 3 (R3, H1)", () => {
     for (const p of ["p1", "other"]) fs.mkdirSync(path.join(ws, p));
     const b = await start({ workspace: ws, killGraceMs: 6000 });
     const ctl = new AbortController();
-    const first = turn(b, { ...code("WAITFOREVER IGNORETERM"), project: "p1" }, ctl.signal).catch(() => {});
-    expect(await until(() => pids().length === 1)).toBe(true);
+    // Wait for the turn's "status" event, not the child's log row: the row comes before the bridge has read the child's init, and a rename in that gap
+    // is seen by the init folder check (same race as T4-1 in liveInP1: code mode off, 409 instead of 429).
+    let statusSeen = false;
+    const first = turn(b, { ...code("WAITFOREVER IGNORETERM"), project: "p1" }, ctl.signal, (e) => { if (e === "status") statusSeen = true; }).catch(() => {});
+    expect(await until(() => pids().length === 1 && statusSeen)).toBe(true);
     const pid = pids()[0];
     // 1. the turn is in the table (its page is still there) and its folder is renamed: the same folder, so the same refusal
     fs.renameSync(path.join(ws, "p1"), path.join(ws, "p2"));
