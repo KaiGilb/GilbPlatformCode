@@ -1673,7 +1673,7 @@ describe("HK2-01 ending a turn ends every descendant, also one that left the pro
   }, 40_000);
 
   it("cause 6, the child exits first: the setpgid child is gone by 10 s", async (ctx) => {
-    // Spec: HK2-01 cause 6 — the stand-in ends itself 300 ms after it started its helpers, which then belong to init. Only what the turn saw before that can be ended.
+    // Spec: HK2-01 cause 6 — the stand-in ends itself 1500 ms after it started its helpers (one look interval of 1000 ms plus slack), which then belong to init. Only what the turn saw before that can be ended.
     await setpgidIsGone(ctx, async () => {
       await startBridge({ opts: { killGraceMs: 400 } });
       const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS-EXIT SETPGID" }, 5000);
@@ -2031,6 +2031,23 @@ describe("L-1 a process list that cannot be read never stops the Codex stop or t
         fs.rmSync(state, { recursive: true, force: true });
       }
     }, 40_000);
+  });
+});
+
+describe("L-2 the descendant watch looks once a second", () => {
+  it("looks about once a second: 2 or 3 looks in 2.5 s, not the 12 a 200 ms look would make", async (ctx) => {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: the watch is off there.");
+    // Spec: ruling L-2 (O-1) — one look is a `ps -A` of about 17 ms CPU (measured, this Mac, 2026-11-27 17:01 UTC), so the look is every 1000 ms, not 200 ms.
+    let looks = 0;
+    const tree = BridgeAll.watchCodexTree({ pid: 4242, exitCode: null, signalCode: null }, { list: async () => { looks += 1; return []; } });
+    try {
+      await delay(2500);
+    } finally {
+      clearInterval(tree.timer);
+    }
+    expect(BridgeAll.CODEX_TREE_LOOK_MS).toBe(1000);
+    expect(looks).toBeGreaterThanOrEqual(2);
+    expect(looks).toBeLessThanOrEqual(3);
   });
 });
 

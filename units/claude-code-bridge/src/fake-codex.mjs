@@ -24,7 +24,7 @@
  * EARLYSHELL (a commandExecution item before the turn/start answer), COMPLETEDSHELL (that item only as
  * item/completed), UPDATEDSHELL (only as item/updated), NOANSWER (turn/completed with no agentMessage),
  * WIDE (the long answer), BIGLINE (the long line, then an answer the bridge must not show),
- * GRANDKIDS (starts three grandchildren: a plain one, one in the background through sh and nohup, and one in its own session; logs their pids; then waits, or with GRANDKIDS-OK answers, or with GRANDKIDS-EXIT ends itself 300 ms later and leaves them running; the word SETPGID adds a fourth helper in a new process group of the same session, and BEAT sends a status line every 40 ms),
+ * GRANDKIDS (starts three grandchildren: a plain one, one in the background through sh and nohup, and one in its own session; logs their pids; then waits, or with GRANDKIDS-OK answers, or with GRANDKIDS-EXIT ends itself 1500 ms later and leaves them running; the word SETPGID adds a fourth helper in a new process group of the same session, and BEAT sends a status line every 40 ms),
  * TOOLTHENFAIL (one tool call, then a failed turn), ITEMS:<base64 JSON array of notifications> (written as given, then an answer), ACCTUPDATE (an account/updated notice with authMode FAKE_CODEX_ACCT_MODE, then an answer).
  */
 import fs from "node:fs";
@@ -307,8 +307,8 @@ async function runScenario(prompt, threadId, turnId) {
       beat.unref();
     }
     if (prompt.includes("GRANDKIDS-OK")) finishTurn(threadId, turnId, "grandkids-done", "final_answer");
-    // Guess: Codex ends on its own while its helpers still run. The short wait lets the bridge see the grandkids row first.
-    if (prompt.includes("GRANDKIDS-EXIT")) setTimeout(() => process.exit(0), 300);
+    // Guess: Codex ends on its own while its helpers still run. The wait lets the bridge look at the helpers first: the bridge looks once a second (CODEX_TREE_LOOK_MS, 1000 ms since round 12 ruling L-2; it was 200 ms, with a 300 ms wait here).
+    if (prompt.includes("GRANDKIDS-EXIT")) setTimeout(() => process.exit(0), 1500);
     return;
   }
   if (prompt.includes("WIDE")) {

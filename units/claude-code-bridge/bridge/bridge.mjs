@@ -3433,8 +3433,13 @@ function waitChildGone(child, ms) {
 // A process group is not enough: a descendant that calls setpgid (Codex's own bookkeeping git does) leaves the group but stays in the
 // session, and a child that exits first hands its helpers to init. So the bridge keeps a look at the child's descendants by parent pid during
 // the turn and takes one more look before it signals anything. Then it signals the group and each pid in that snapshot.
-/** How often a live Codex child's descendants are looked at (Mac and Linux). A descendant that lives shorter than this and is gone before the stop is not missed: it is gone. */
-export const CODEX_TREE_LOOK_MS = 200;
+/**
+ * How often a live Codex child's descendants are looked at (Mac and Linux). A descendant that lives shorter than this and is gone before the stop is not missed: it is gone.
+ * Decision: 1000 ms, not 200 ms (ruling L-2). One look is one `ps -A`, about 17 ms of CPU (median of 60 runs, this Mac, 2026-11-27 17:01 UTC), which is
+ * about 8.7% of one core at 200 ms and about 1.7% at 1000 ms, for the whole life of every Codex child. The price is a wider known gap: a helper that
+ * is started and then handed to init (its parent, the child, exits first) less than this long after it started can be missed.
+ */
+export const CODEX_TREE_LOOK_MS = 1000;
 /**
  * How long one read of the process list is waited for, at a stop and in the watch. A read that takes longer counts as unreadable.
  * Decision: 1500 ms. One `ps -A` took about 18 ms of CPU on a loaded Mac (tester round 9 measured it), so 1500 ms is far above
