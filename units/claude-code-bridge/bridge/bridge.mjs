@@ -1039,11 +1039,6 @@ export const WINDOWS_PROC_SCRIPT = "Get-CimInstance Win32_Process | Select-Objec
  * timeout (3 to 4 s; runs 46020685013 and 46020700133). 250 ms is a grace for a response that is finishing its last write.
  */
 const CLOSE_GRACE_MS = 250;
-// Batch F diagnostic: removed before merge. [SU5A] lines for the X6 loop: every claude child's spawn, stop (with its caller), taskkill and exit/close.
-const su5a = (m) => { try {
-    console.error(`[SU5A] ${new Date().toISOString()} ${m}`);
-}
-catch { /* diagnostic only */ } };
 /**
  * How long a stop or a close waits for a last look at the process list before it goes on with what is already known. Off Windows the list is `ps`
  * (about 20 ms); on Windows it is a PowerShell start that took several seconds on GitHub's runner (run 46025210385: a whole close of 4891 ms), and a
@@ -1171,10 +1166,7 @@ export function killChild(child, env = process.env, o = {}) {
             return resolve();
         }
         try {
-            const __t = Date.now();
-            su5a(`taskkill /PID ${pid} starts`); // Batch F diagnostic: removed before merge
             run(path.win32.join(root, "System32", "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], { windowsHide: true }, (err) => {
-                su5a(`taskkill ${pid} returned after ${Date.now() - __t} ms err=${err ? String(err.message).slice(0, 80) : "none"}`); // Batch F diagnostic: removed before merge
                 if (err)
                     child.kill(); // taskkill could not run, or the process is already gone
                 resolve();
@@ -3381,7 +3373,6 @@ export function createBridge(opts = {}) {
     };
     /** Stops a child (and its group). A tracked code child is looked at first, so what it started is known before the group is gone and its children are re-parented. */
     const stopChild = async (c) => {
-        su5a(`stopChild pid=${c?.pid} exitCode=${c?.exitCode} caller=${(new Error().stack ?? "").split("\n")[2]?.trim().slice(0, 80)}`); // Batch F diagnostic: removed before merge
         const tr = c?.pid !== undefined ? tracks.get(c.pid) : undefined;
         if (tr && platform !== "win32" && listingLeft() > 0)
             await withinListingBudget(snapshotTrack(tr)); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
@@ -4711,11 +4702,6 @@ export function createBridge(opts = {}) {
                     liveFolder.set(child.pid, { path: guardPath(scope.path), id: scope.id });
             }
             turn.child = child;
-            { // Batch F diagnostic: removed before merge
-                su5a(`spawn pid=${child.pid} kind=${turn.code ? "code" : "chat"} turnId=${turn.id} cwd=${turn.code && scope ? scope.path : workDir}`);
-                child.on("exit", (c, sg) => su5a(`exit pid=${child.pid} code=${c} signal=${sg}`));
-                child.on("close", () => su5a(`close pid=${child.pid}`));
-            }
             let buf = "";
             let stderr = "";
             let model = "";

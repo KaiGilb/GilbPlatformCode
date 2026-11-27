@@ -4,7 +4,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const WAIT_MS = 5000;
+// How long to wait for a stand-in to exit; the wait ends the moment the last one is gone, so a larger bound costs nothing when they exit at once.
+// Windows: a chat stand-in stopped by the bridge took 11.2 s to exit once, while the whole suite ran in parallel (run 46035653922, SU-5a), and the
+// 5 s bound then removed the folder under it (EBUSY). Isolated, the same stop takes about 50 ms (40 runs, median 50 ms, max taskkill 99 ms), so the
+// slowness is the loaded runner, not a stuck child; the SU-5a file's hooks have a 30 s limit (a file with the default 10 s hook limit ends at that limit instead).
+const WAIT_MS = process.platform === "win32" ? 25000 : 5000;
 const KILL_AFTER_MS = 3000;
 const POLL_MS = 40;
 const MAX_LOG_BYTES = 2_000_000;
@@ -128,9 +132,6 @@ async function waitForExit(pids) {
  */
 export async function removeTestDir(dir, logPaths) {
   const pids = collectPids(dir, logPaths);
-  const __t = Date.now(); // Batch F diagnostic: removed before merge
-  console.error(`[SU5A] ${new Date().toISOString()} removeTestDir starts pids=[${[...pids].join(",")}]`);
   if (pids.size > 0) await waitForExit(pids);
-  console.error(`[SU5A] ${new Date().toISOString()} removeTestDir waited ${Date.now() - __t} ms; alive=[${[...pids].filter((p) => pidAlive(p)).join(",")}]`); // Batch F diagnostic: removed before merge
   if (typeof dir === "string" && dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }
