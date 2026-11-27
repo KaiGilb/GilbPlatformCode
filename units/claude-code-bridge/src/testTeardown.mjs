@@ -3,7 +3,6 @@
 // The stand-in records its pid on its first "boot" event (and again on "run") in FAKE_CLAUDE_LOG. Wait those pids out, then remove the folder.
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process"; // Batch F diagnostic: removed before merge
 
 const WAIT_MS = 5000;
 const KILL_AFTER_MS = 3000;
@@ -129,19 +128,6 @@ async function waitForExit(pids) {
  */
 export async function removeTestDir(dir, logPaths) {
   const pids = collectPids(dir, logPaths);
-  if (process.platform === "win32") console.error(`[SU5A] ${new Date().toISOString()} removeTestDir starts dir=${dir} pids to wait for=[${[...pids].join(",")}]`); // Batch F diagnostic: removed before merge
   if (pids.size > 0) await waitForExit(pids);
-  try {
-    if (typeof dir === "string" && dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
-  } catch (e) {
-    // Batch F diagnostic: removed before merge. Which processes could hold this folder? Prints, then rethrows the same error.
-    if (process.platform === "win32") {
-      try {
-        const alive = [...pids].map((p) => `${p}:${pidAlive(p)}`).join(" ");
-        const ps = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'node|claude|taskkill|conhost' } | ForEach-Object { "$($_.ProcessId) ppid=$($_.ParentProcessId) $($_.Name) $($_.CommandLine)" }`], { encoding: "utf8", timeout: 20000 });
-        console.error(`[SU5A-EBUSY] ${e.code} on ${dir}; logged pids alive: [${alive}]\n${ps.slice(0, 3000)}`);
-      } catch (e2) { console.error(`[SU5A-EBUSY] could not list processes: ${e2?.message}`); }
-    }
-    throw e;
-  }
+  if (typeof dir === "string" && dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }

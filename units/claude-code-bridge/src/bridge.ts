@@ -1169,8 +1169,6 @@ export const WINDOWS_PROC_SCRIPT = "Get-CimInstance Win32_Process | Select-Objec
  * timeout (3 to 4 s; runs 46020685013 and 46020700133). 250 ms is a grace for a response that is finishing its last write.
  */
 const CLOSE_GRACE_MS = 250;
-// Batch F diagnostic: removed before merge. [SU5A] lines: who starts, stops and ends each claude child (X5 part 5).
-const su5a = (m: string) => { try { console.error(`[SU5A] ${new Date().toISOString()} ${m}`); } catch { /* diagnostic only */ } };
 /**
  * How long a stop or a close waits for a last look at the process list before it goes on with what is already known. Off Windows the list is `ps`
  * (about 20 ms); on Windows it is a PowerShell start that took several seconds on GitHub's runner (run 46025210385: a whole close of 4891 ms), and a
@@ -1277,9 +1275,7 @@ export function killChild(child: ChildProcess | null | undefined, env: NodeJS.Pr
       return resolve();
     }
     try {
-      const __t = Date.now(); su5a(`killChild: taskkill /PID ${pid} starts`); // Batch F diagnostic: removed before merge
       run(path.win32.join(root, "System32", "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], { windowsHide: true }, (err) => {
-        su5a(`killChild: taskkill for ${pid} returned after ${Date.now() - __t} ms err=${err ? String((err as Error).message).slice(0, 100) : "none"}`); // Batch F diagnostic: removed before merge
         if (err) child.kill(); // taskkill could not run, or the process is already gone
         resolve();
       });
@@ -3348,7 +3344,6 @@ export function createBridge(opts: BridgeOptions = {}) {
   };
   /** Stops a child (and its group). A tracked code child is looked at first, so what it started is known before the group is gone and its children are re-parented. */
   const stopChild = async (c: ChildProcess | null | undefined): Promise<void> => {
-    su5a(`stopChild pid=${c?.pid} exitCode=${c?.exitCode} port=${port}`); // Batch F diagnostic: removed before merge
     const tr = c?.pid !== undefined ? tracks.get(c.pid) : undefined;
     if (tr && platform !== "win32" && listingLeft() > 0) await withinListingBudget(snapshotTrack(tr)); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
     return killChild(c, env, { ...opts.platformOpts, graceMs: opts.killGraceMs });
@@ -4489,10 +4484,6 @@ export function createBridge(opts: BridgeOptions = {}) {
         if (child.pid !== undefined && scope) liveFolder.set(child.pid, { path: guardPath(scope.path), id: scope.id });
       }
       turn.child = child;
-      { // Batch F diagnostic: removed before merge
-        su5a(`spawn pid=${child.pid} kind=${turn.code ? "code" : "chat"} turnId=${turn.id} parent=${turn.parent ? "yes" : "no"} cwd=${turn.code && scope ? scope.path : workDir} port=${port}`);
-        child.on("exit", (c, sg) => su5a(`exit pid=${child.pid} turnId=${turn.id} code=${c} signal=${sg}`));
-      }
       let buf = "";
       let stderr = "";
       let model = "";
@@ -5785,7 +5776,6 @@ export function createBridge(opts: BridgeOptions = {}) {
   };
   const closeBridge = (): Promise<void> => {
     bridgeClosing = true; // from here no preview starts, even on a connection that is still open
-    su5a(`closeBridge starts port=${port} workDir=${workDir} turns=[${[...turns.values()].map((t) => `${t.id}:${t.child?.pid}`).join(",")}] liveGroups=[${[...liveGroups.keys()].join(",")}]`); // Batch F diagnostic: removed before merge
     closeListingDeadline = Date.now() + SNAPSHOT_CAP_MS;
     closeCapLogged = false;
     const previewsClosed = closeAllPreviews();
@@ -5796,7 +5786,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       // (closeIdleConnections / closeAllConnections exist from Node 18.2; the unit allows Node >=18, so each is checked.)
       if (typeof server.closeIdleConnections === "function") server.closeIdleConnections();
       const cut = setTimeout(() => { if (typeof server.closeAllConnections === "function") server.closeAllConnections(); }, CLOSE_GRACE_MS);
-      server.close(() => { clearTimeout(cut); closeListingDeadline = null; su5a(`closeBridge done port=${port}`); releaseLock(); resolve(); });
+      server.close(() => { clearTimeout(cut); closeListingDeadline = null; releaseLock(); resolve(); });
     }));
   };
   const server = http.createServer((req, res) => {
