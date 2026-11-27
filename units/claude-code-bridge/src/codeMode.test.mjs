@@ -186,7 +186,9 @@ describe("the turn body", () => {
   it("429 for a second code turn at once, with the folder name; a chat turn still runs", async () => {
     const secret = await start();
     const first = post(secret, T({ mode: "code", prompt: "WAITFOREVER" }));
+    const __t0 = Date.now(); // Batch F diagnostic: removed before merge
     for (let i = 0; i < 100 && runs().length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    console.log(`Batch F diagnostic (removed before merge): codeMode 429 wait for first run log: ${Date.now() - __t0} ms, ${Date.now() - __t0 >= 4900 ? "TIMED OUT" : "ok"}`);
     expect(runs()).toHaveLength(1);
     const second = await post(secret, T({ mode: "code" }));
     expect(second.status).toBe(429);

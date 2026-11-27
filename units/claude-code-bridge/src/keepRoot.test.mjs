@@ -408,7 +408,9 @@ describe("what a caller is told (S7, S8)", () => {
     const ws = mk("Unpaired2");
     const b = await start({ workspace: ws });
     const running = turn(b, code("WAITFOREVER")).catch(() => {});
+    const __t0 = Date.now(); // Batch F diagnostic: removed before merge
     for (let i = 0; i < 100 && !fs.existsSync(logFile); i++) await new Promise((r) => setTimeout(r, 50));
+    console.log(`Batch F diagnostic (removed before merge): keepRoot wait for first run log: ${Date.now() - __t0} ms, ${Date.now() - __t0 >= 4900 ? "TIMED OUT" : "ok"}`);
     for (const route of ["/v1/workspace/choose", "/v1/workspace/create", "/v1/workspace/open"]) {
       const r = await call(b, route, { name: "X" }, null);
       expect(r.status).toBe(401);
@@ -423,7 +425,9 @@ describe("what a caller is told (S7, S8)", () => {
     const ws = mk("Named");
     const b = await start({ workspace: ws, chooseFolder: async () => null });
     const running = turn(b, code("WAITFOREVER")).catch(() => {});
+    const __t0 = Date.now(); // Batch F diagnostic: removed before merge
     for (let i = 0; i < 100 && !fs.existsSync(logFile); i++) await new Promise((r) => setTimeout(r, 50));
+    console.log(`Batch F diagnostic (removed before merge): keepRoot wait for first run log: ${Date.now() - __t0} ms, ${Date.now() - __t0 >= 4900 ? "TIMED OUT" : "ok"}`);
     for (const [route, body] of [["/v1/workspace/choose", {}], ["/v1/workspace/create", { name: "Other" }]]) {
       const r = await call(b, route, body);
       expect(r.status).toBe(409);
