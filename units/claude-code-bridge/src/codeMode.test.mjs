@@ -2,12 +2,12 @@
 // Code mode (0.2.0): a turn that may read, edit and run commands inside one folder the person chose.
 // Hermetic: a stand-in `claude`. The REAL claude is exercised by scripts/code-mode-probe.mjs (run by hand, not by CI).
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { codeTurnSettings, createBridge, parseCli, validateWorkspace, CODE_TOOLS, WEB_TOOLS } from "../bridge/bridge.mjs";
+import { codeTurnSettings, computerSandboxSettings, createBridge, parseCli, resolveThroughLinks, validateWorkspace, CODE_TOOLS, WEB_TOOLS } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -544,5 +544,102 @@ describe("activity summary", () => {
     const secret = await start();
     const r = await post(secret, T({ mode: "code", prompt: "CODEEMPTY" }));
     expect(ev(r, "activity")).toEqual([{ tool: "Bash", summary: "Bash" }, { tool: "Read", summary: "Read" }]);
+  });
+});
+
+// Spec: Chat.SandboxLocalBind — a sandboxed chat session may bind local ports; nothing else widens
+const FOLDER_DOMAINS = ["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org", "codeload.github.com", "raw.githubusercontent.com"];
+const FOLDER_DENY_READ = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.base-deploy", "~/Developer/.base-deploy", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure", "~/Library/Keychains", "~/Library/Application Support/Google/Chrome", "~/Library/Application Support/Firefox", "~/Library/Safari"];
+const BIND_HOME = "/no/such/sandbox-home";
+const BIND_FOLDER = "/no/such/sandbox-home/Code";
+/** Main's sandbox object, with `allowLocalBinding` taken off so the rest can be compared before and after that key exists. */
+function withoutLocalBind(sandbox) {
+  const network = { ...sandbox.network };
+  delete network.allowLocalBinding;
+  return { ...sandbox, network };
+}
+/** `withRealPaths`: the written path and the path `resolveThroughLinks` walks, deduped in that order. */
+function withReal(list) {
+  return [...new Set(list.flatMap((p) => [p, resolveThroughLinks(p)]))];
+}
+/**
+ * Computer-mode filesystem for these inputs, from the same host calls as `computerSandboxSettings`
+ * (`path.join`, `resolveThroughLinks`). `platform` picks credential names; the spellings come from the host.
+ */
+function computerFilesystemMain() {
+  const places = [`${BIND_HOME}/.ssh`];
+  const absHome = (p) => (p.startsWith("~/") ? path.join(BIND_HOME, p.slice(2)) : p);
+  return {
+    allowWrite: withReal([BIND_FOLDER, path.join(BIND_HOME, "Developer"), "/tmp"]),
+    denyWrite: [...withReal(places), ...withReal([path.join(BIND_HOME, "Developer", "GilbServerOps")])],
+    denyRead: withReal([...places, ...FOLDER_DENY_READ.map(absHome)]),
+  };
+}
+const FOLDER_SANDBOX_MAIN = (autoAllowBashIfSandboxed) => ({
+  enabled: true,
+  failIfUnavailable: true,
+  allowUnsandboxedCommands: false,
+  autoAllowBashIfSandboxed,
+  network: { allowedDomains: FOLDER_DOMAINS },
+  filesystem: { denyRead: FOLDER_DENY_READ },
+});
+const COMPUTER_SANDBOX_MAIN = {
+  enabled: true,
+  failIfUnavailable: true,
+  allowUnsandboxedCommands: false,
+  autoAllowBashIfSandboxed: true,
+  network: { allowedDomains: ["*"] },
+};
+/** The scalar fields and domain lists are literals; the filesystem lists use the host's own path calls. */
+function expectOtherSandboxFieldsEqualMain() {
+  for (const platform of ["darwin", "linux"]) {
+    expect(withoutLocalBind(codeTurnSettings(BIND_HOME, platform).sandbox), `folder session ${platform}`).toEqual(FOLDER_SANDBOX_MAIN(true));
+    expect(withoutLocalBind(codeTurnSettings(BIND_HOME, platform, [], "each-write").sandbox), `folder each-write ${platform}`).toEqual(FOLDER_SANDBOX_MAIN(false));
+    const computer = computerSandboxSettings(BIND_HOME, BIND_FOLDER, [`${BIND_HOME}/.ssh`], [], [], "", platform).sandbox;
+    expect(withoutLocalBind(computer), `computer ${platform}`).toEqual({ ...COMPUTER_SANDBOX_MAIN, filesystem: computerFilesystemMain() });
+    expect(computer.excludedCommands, `computer excludedCommands ${platform}`).toBeUndefined();
+    expect(codeTurnSettings(BIND_HOME, platform).sandbox.excludedCommands, `folder excludedCommands ${platform}`).toBeUndefined();
+  }
+}
+
+describe("sandbox local binding", () => {
+  it("KA1 folder mode and computer mode may bind a local port on darwin and linux", () => {
+    // Spec: Chat.SandboxLocalBind — a sandboxed chat session may bind local ports; nothing else widens
+    for (const platform of ["darwin", "linux"]) {
+      expect(codeTurnSettings(BIND_HOME, platform).sandbox.network.allowLocalBinding, `folder ${platform}`).toBe(true);
+      expect(computerSandboxSettings(BIND_HOME, BIND_FOLDER, [`${BIND_HOME}/.ssh`], [], [], "", platform).sandbox.network.allowLocalBinding, `computer ${platform}`).toBe(true);
+    }
+  });
+
+  it("U2 every other sandbox field equals main", () => {
+    // Spec: Chat.SandboxLocalBind — a sandboxed chat session may bind local ports; nothing else widens
+    expectOtherSandboxFieldsEqualMain();
+  });
+
+  // On a Windows host U2 itself runs with real Windows paths.
+  it.skipIf(process.platform === "win32")("U2 holds when the host joins paths the Windows way", () => {
+    // Spec: Chat.SandboxLocalBind — a sandboxed chat session may bind local ports; nothing else widens
+    // computerSandboxSettings does not read os.tmpdir, TMPDIR, or os.homedir (home and tmpDirs are arguments; U2 passes []).
+    // It reads the host path module. Point those methods at path.win32 for this comparison.
+    const sep = path.sep;
+    const spies = ["join", "dirname", "parse", "isAbsolute"].map((key) => vi.spyOn(path, key).mockImplementation(path.win32[key]));
+    path.sep = path.win32.sep;
+    try {
+      expectOtherSandboxFieldsEqualMain();
+      const allowWrite = computerSandboxSettings(BIND_HOME, BIND_FOLDER, [`${BIND_HOME}/.ssh`], [], [], "", "darwin").sandbox.filesystem.allowWrite;
+      expect(allowWrite).toContain("\\tmp");
+    } finally {
+      path.sep = sep;
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  it("U5 Windows files-only still has no sandbox block", () => {
+    // Spec: Chat.SandboxLocalBind — a sandboxed chat session may bind local ports; nothing else widens
+    for (const approval of ["session", "each-write"]) {
+      const w = codeTurnSettings("C:\\Users\\a", "win32", [], approval);
+      expect(w.sandbox, approval).toBeUndefined();
+      expect(Object.hasOwn(w, "sandbox"), approval).toBe(false);
+    }
   });
 });
