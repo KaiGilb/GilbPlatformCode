@@ -203,6 +203,11 @@ describe("the turn body", () => {
   });
 });
 
+// Windows only: close() takes a last look at the process list, and on GitHub's Windows runner that PowerShell listing sometimes takes over 1.5 s, so
+// the bridge caps the wait (SNAPSHOT_CAP_MS = 1500 in bridge.ts, not exported, so it is repeated here) and goes on. Measured: 5 of about 20 listings were
+// capped at 1511 to 1514 ms (runs 46026429688, 46026459769). The listing stays because it catches processes that left the tree. So a close there is
+// bounded by the cap plus 500 ms; everywhere else it stays under 1 s. This is a different bound, not a skip.
+const WINDOWS_CLOSE_BOUND_MS = 1500 + 500;
 describe("shutdown while a code turn runs", () => {
   // Spec: the bridge shuts down promptly while a code turn runs. close() stopped the child, but the turn's response was still open, and
   // server.close() waited for the keep-alive timeout (3 to 4 s on Windows) before it called back.
@@ -216,7 +221,7 @@ describe("shutdown while a code turn runs", () => {
     const took = Date.now() - t0;
     bridge = undefined;
     await first.catch(() => {});
-    expect(took).toBeLessThan(1000);
+    expect(took).toBeLessThan(process.platform === "win32" ? WINDOWS_CLOSE_BOUND_MS : 1000);
   });
 });
 
