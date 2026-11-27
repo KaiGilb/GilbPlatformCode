@@ -374,6 +374,7 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 - 0.3.21: `POST /v1/projects/create` runs `git init` in the new project (no template, so no hooks) before any turn, so the selective-commit step can run and the deny on `.git` hooks, config and info/attributes covers it.
 - 0.3.22: the Open button: `POST /v1/preview` serves a read-only copy of a project's built app (see "Preview (Open button)"); a code turn the bridge refused because Claude Code did not start in the code folder is no longer retried, its log line names the init, the reported folder and the expected one, and later code turns say why code mode is off.
 - 0.3.23: a code turn that moves into a subfolder, or fails one folder check, no longer makes the bridge forget the code folder: that turn is stopped, the folder stays saved, and code mode comes back at the next use once the folder passes its check again; a paired `GET /v1/hello` says why while it is off (`codeModeOff`), and the "a code turn is running" answers name the running folder (`runningProjectFolder`).
+- 0.3.24: a chat's own tests may start a local server: both sandbox modes set network.allowLocalBinding; outbound hosts, folder rules and every other sandbox field are unchanged.
 
 ## Preview (Open button)
 
