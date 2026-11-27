@@ -1247,8 +1247,11 @@ export function listProcsSync(platform: string): ProcRow[] | null {
     return null;
   }
 }
-/** Every process below `root` by the parent links of this list (not `root` itself). */
-export function descendantsOf(rows: readonly ProcRow[], root: number): ProcRow[] {
+/**
+ * Every process below `root` by the parent links of this list (not `root` itself).
+ * @param skip Optional. A pid it answers true for is left out and never walked below. Absent: every row counts (the Claude tracker's use, unchanged).
+ */
+export function descendantsOf(rows: readonly ProcRow[], root: number, skip?: (pid: number) => boolean): ProcRow[] {
   const kids = new Map<number, ProcRow[]>();
   for (const r of rows) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r]);
   const out: ProcRow[] = [];
@@ -1258,6 +1261,8 @@ export function descendantsOf(rows: readonly ProcRow[], root: number): ProcRow[]
     for (const k of kids.get(todo.pop()!) ?? []) {
       if (seen.has(k.pid)) continue;
       seen.add(k.pid);
+      // A refused pid ends its branch: what hangs below it is reached only through it. Pid 1, for one, has every reparented process below it.
+      if (skip?.(k.pid)) continue;
       out.push(k);
       todo.push(k.pid);
     }
@@ -3447,6 +3452,13 @@ async function readProcsSafely(read: () => Promise<unknown>, boundMs: number): P
     if (timer) clearTimeout(timer);
   }
 }
+/**
+ * The one rule for which pid may be signalled, and so which pid the descendant walk may reach: a whole number above 1 that is neither this process nor this process's group.
+ * The stop and the watch both use it, so a refused pid cannot be a way in to the pids below it.
+ */
+function signalablePid(n: unknown, ownPid: number, ownPgid: number | null): n is number {
+  return typeof n === "number" && Number.isInteger(n) && n > 1 && n !== ownPid && n !== ownPgid;
+}
 let ownPgidCache: number | null | undefined;
 /** The bridge's own process group id (ps), read once. Null when ps cannot say. */
 function ownPgidNow(): number | null {
@@ -3462,15 +3474,15 @@ function ownPgidNow(): number | null {
 /**
  * Updates `seen` from one process list: forgets what is gone or reused (start time differs), then adds every descendant of `root`.
  * When the root itself has exited, nothing is added: its pid may belong to a stranger now, and the stranger's children are not ours.
- * Returns the rows to end.
+ * Returns the rows to end. `refused` names the pids that are never signalled: the walk does not go below them either (M-2, O-6).
  */
-function mergeCodexSeen(seen: Map<number, ProcRow>, rows: readonly ProcRow[], root: number, rootGone: boolean): ProcRow[] {
+function mergeCodexSeen(seen: Map<number, ProcRow>, rows: readonly ProcRow[], root: number, rootGone: boolean, refused: (pid: number) => boolean): ProcRow[] {
   const now = new Map(rows.map((r) => [r.pid, r]));
   for (const [pid, old] of [...seen]) {
     const cur = now.get(pid);
     if (!cur || cur.start !== old.start) seen.delete(pid);
   }
-  if (!rootGone) for (const d of descendantsOf(rows, root)) seen.set(d.pid, d);
+  if (!rootGone) for (const d of descendantsOf(rows, root, refused)) seen.set(d.pid, d);
   return [...seen.values()];
 }
 /**
@@ -3496,9 +3508,9 @@ export async function endCodexTree(groupPid: number | undefined, seen: Map<numbe
   const ownPgid = deps.ownPgid !== undefined ? deps.ownPgid : ownPgidNow();
   const source = deps.list ?? codexTreeListSeam ?? (() => listProcs(process.platform));
   const list = () => readProcsSafely(source, deps.listBoundMs ?? CODEX_TREE_LIST_MS);
-  // The one place that decides what may be signalled: a whole number above 1 that is neither this process nor this process's group.
+  // What may be signalled is decided by signalablePid. The same test keeps the snapshot walk from going below a pid that is refused.
   // A Codex descendant can never be the bridge's group leader (that is the bridge or one of its parents), so refusing that number as a pid costs nothing.
-  const okPid = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n > 1 && n !== ownPid && n !== ownPgid;
+  const okPid = (n: unknown): n is number => signalablePid(n, ownPid, ownPgid);
   const send = (pid: number, sig: NodeJS.Signals | 0): boolean => {
     try { kill(pid, sig); return true; } catch { return false; /* ESRCH: gone. EPERM: not ours. Neither is an error here. */ }
   };
@@ -3509,7 +3521,7 @@ export async function endCodexTree(groupPid: number | undefined, seen: Map<numbe
   };
   const rows0 = await list();
   const snapshot = new Map<number, ProcRow>();
-  if (rows0 && groupPid !== undefined) for (const r of mergeCodexSeen(seen, rows0, groupPid, childExited)) if (okPid(r.pid)) snapshot.set(r.pid, r);
+  if (rows0 && groupPid !== undefined) for (const r of mergeCodexSeen(seen, rows0, groupPid, childExited, (p) => !okPid(p))) if (okPid(r.pid)) snapshot.set(r.pid, r);
   const members = () => [...snapshot.keys()];
   const anyAlive = () => groupAlive() || members().some(pidAlive);
   const waitGone = async (ms: number) => {
@@ -3546,7 +3558,7 @@ export function watchCodexTree(child: ChildProcess, deps: { list?: (() => Promis
     busy = true;
     const source = deps.list ?? codexTreeListSeam ?? (() => listProcs(process.platform));
     void readProcsSafely(source, deps.boundMs ?? CODEX_TREE_LIST_MS)
-      .then((rows) => { if (rows) mergeCodexSeen(tree.seen, rows, pid, childGone(child)); })
+      .then((rows) => { if (rows) mergeCodexSeen(tree.seen, rows, pid, childGone(child), (p) => !signalablePid(p, process.pid, ownPgidNow())); })
       .catch(() => {})
       .finally(() => { busy = false; });
   }, deps.lookMs ?? CODEX_TREE_LOOK_MS);

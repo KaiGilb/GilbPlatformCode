@@ -1901,6 +1901,42 @@ describe("HK2-01 endCodexTree guards", () => {
     }
   });
 
+  it("never walks below a pid it refuses: nothing reached only through pid 0, pid 1 or the bridge's own pid is in the snapshot or signalled (M-2, O-6)", async () => {
+    // Spec: Chat.CodexConnect HK2-01 endCodexTree — the snapshot holds no pid reached only through a refused pid (QA round 10, O-6: the walk used to go below them).
+    // A hostile process list: a row that puts the refused pid under the Codex group, with children (and grandchildren) under it.
+    // Real machine: pid 1's children are every reparented process, so walking below pid 1 would signal strangers.
+    const cases = [
+      ["pid 0", 0, [row(500, 900), row(0, 500), row(600, 0), row(601, 600), row(501, 500)], [600, 601]],
+      ["pid 1", 1, [row(500, 900), row(1, 500), row(610, 1), row(611, 610), row(700, 1), row(501, 500)], [610, 611, 700]],
+      ["the bridge's own pid", OWN_PID, [row(500, 900), row(OWN_PID, 500), row(620, OWN_PID), row(621, 620), row(501, 500)], [620, 621]],
+      ["the bridge's own group", OWN_PGID, [row(500, 900), row(OWN_PGID, 500), row(630, OWN_PGID), row(631, 630), row(501, 500)], [630, 631]],
+    ];
+    for (const [label, refused, rows, behind] of cases) {
+      const alive = new Set([500, 501, ...behind]);
+      const m = machine(alive, { stubborn: [500, 501, ...behind], lists: [rows, rows] });
+      const pids = await run(m, 500);
+      expect(pids, label).toEqual([501]); // the refused pid itself stays out too
+      const sent = signalled(m);
+      for (const pid of [refused, ...behind]) expect(sent.some((c) => Math.abs(c.pid) === pid), `${label}: ${pid} signalled`).toBe(false);
+      expect(sent.map((c) => `${c.sig}:${c.pid}`), label).toEqual(["SIGTERM:-500", "SIGTERM:501", "SIGKILL:-500", "SIGKILL:501"]);
+    }
+  });
+
+  it("the descendant watch does not walk below a refused pid either: nothing behind pid 0, pid 1 or the bridge's own pid enters what it has seen", async (ctx) => {
+    // Spec: Chat.CodexConnect HK2-01 endCodexTree — the watch feeds the same snapshot, so it must hold the same refusal (M-2, O-6).
+    if (process.platform === "win32") ctx.skip("skipped on Windows: the watch is off there.");
+    const start = "Fri Nov 27 15:00:00 2026";
+    const r = (pid, ppid) => ({ pid, ppid, start });
+    const rows = [r(4242, 1), r(0, 4242), r(600, 0), r(1, 4242), r(700, 1), r(process.pid, 4242), r(800, process.pid), r(4300, 4242)];
+    const tree = BridgeAll.watchCodexTree({ pid: 4242, exitCode: null, signalCode: null }, { list: async () => rows, lookMs: 10, boundMs: 40 });
+    try {
+      await until(() => tree.seen.has(4300), 5000);
+    } finally {
+      clearInterval(tree.timer);
+    }
+    expect([...tree.seen.keys()].sort((a, b) => a - b)).toEqual([4300]);
+  });
+
   it("a pid that is already gone (ESRCH) is not an error, and a list that cannot be read still signals the group and nothing else", async () => {
     const gone = machine(new Set(), { lists: [tree], esrchOnly: [500, 501, 502] });
     await expect(run(gone, 500)).resolves.toBeDefined();
