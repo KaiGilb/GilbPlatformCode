@@ -1725,6 +1725,107 @@ describe("HK2-01 ending a turn ends every descendant, also one that left the pro
       for (const pid of ownRows(g)) if (pid) endByPid(pid);
     }
   }, 40_000);
+
+  // ---- L-3: the setsid helper in all seven turn-end causes --------------------------------------------------------------------
+  // Cause 4 (idle limit) is the test "case (c): a grandchild in its own session is ended by the descendant walk …" in the HK1-04 describe above.
+  // Cause 6 (child exits first) is the test "a session leader that was seen below the child before the child exited is ended too (measured)" above.
+  // The five tests below cover causes 1, 2, 3, 5 and 7. All use the stand-in's own-session helper (Node `detached: true`, which calls setsid).
+  /** The process group id of a live pid by `ps` (NaN when ps cannot say). */
+  const pgidOf = (pid) => Number(spawnSync("/bin/ps", ["-o", "pgid=", "-p", String(pid)], { encoding: "utf8", env: { PATH: "/usr/bin:/bin", LC_ALL: "C" } }).stdout.trim());
+  /** Runs one turn-end cause and checks the setsid helper (the row's `session`) is gone by 10 s. */
+  async function sessionIsGone(ctx, endTurn) {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
+    const g = await endTurn();
+    try {
+      expect(g.session).toBeGreaterThan(0);
+      await until(() => esrch(g.session), WAIT_AFTER_END_MS);
+      expect(esrch(g.session)).toBe(true);
+    } finally {
+      for (const pid of ownRows(g)) if (pid) endByPid(pid);
+    }
+  }
+  /** Waits for the grandkids row while the turn is still running and proves the session helper leads a group of its own (not the stand-in's), so a group signal cannot reach it. */
+  async function seenSession() {
+    await until(() => grandkids()?.session);
+    const g = grandkids();
+    expect(pgidOf(g.session)).toBe(g.session);
+    expect(pgidOf(g.session)).not.toBe(g.pid);
+    return g;
+  }
+
+  it("known answer: a plain group SIGKILL leaves the setsid helper alive (the helper really escapes the group signal)", async (ctx) => {
+    if (process.platform === "win32") ctx.skip("skipped on Windows: Windows ends the tree with taskkill /T /F; Part 5.");
+    // Spec: L-3 — the same escape as the setpgid known answer above, for the setsid helper, so the cause tests below can go red.
+    await startBridge({ opts: { codexIdleMs: 20000, killGraceMs: 400 } });
+    const live = await openTurn(secret, { engine: "codex", prompt: "GRANDKIDS" });
+    const g = await seenSession();
+    try {
+      process.kill(-g.pid, "SIGKILL");
+      await delay(500);
+      expect(esrch(g.plain)).toBe(true);
+      expect(esrch(g.session)).toBe(false);
+    } finally {
+      live.close();
+      for (const pid of ownRows(g)) if (pid) endByPid(pid);
+    }
+  }, 40_000);
+
+  it("cause 1, a normal end: the setsid child is gone by 10 s", async (ctx) => {
+    // Spec: L-3 cause 1 — normal end. kill -0 answers ESRCH for the helper that started its own session.
+    // The helper's own-group proof is in the known-answer test above: here the turn ends at once, so a ps read could come after the stop.
+    await sessionIsGone(ctx, async () => {
+      await startBridge({ opts: { killGraceMs: 400 } });
+      const r = await turn(secret, { engine: "codex", prompt: "GRANDKIDS-OK" });
+      expect(r.error).toBeUndefined();
+      await until(() => grandkids()?.session);
+      return grandkids();
+    });
+  }, 40_000);
+
+  it("cause 2, a stop from the page: the setsid child is gone by 10 s", async (ctx) => {
+    // Spec: L-3 cause 2 — POST /v1/turn/cancel.
+    await sessionIsGone(ctx, async () => {
+      await startBridge({ opts: { killGraceMs: 400 } });
+      const live = await openTurn(secret, { engine: "codex", prompt: "GRANDKIDS" });
+      const g = await seenSession();
+      expect((await api(secret, "/v1/turn/cancel", { turnId: live.turnId })).json).toEqual({ cancelled: true });
+      await until(() => live.events.some((e) => e[0] === "error"));
+      return g;
+    });
+  }, 40_000);
+
+  it("cause 3, the page disconnects: the setsid child is gone by 10 s", async (ctx) => {
+    // Spec: L-3 cause 3 — the page closes the stream mid-turn.
+    await sessionIsGone(ctx, async () => {
+      await startBridge({ opts: { killGraceMs: 400 } });
+      const live = await openTurn(secret, { engine: "codex", prompt: "GRANDKIDS" });
+      const g = await seenSession();
+      live.close();
+      return g;
+    });
+  }, 40_000);
+
+  it("cause 5, the overall limit: the setsid child is gone by 10 s", async (ctx) => {
+    // Spec: L-3 cause 5 — the stand-in keeps sending lines (BEAT), so only codexTurnMaxMs can end the turn.
+    await sessionIsGone(ctx, async () => {
+      await startBridge({ opts: { codexTurnMaxMs: 1500, killGraceMs: 400 } });
+      const r = await turnWithin({ engine: "codex", prompt: "GRANDKIDS BEAT" }, 6000);
+      expect(r.error).toEqual({ message: IDLE });
+      await until(() => grandkids()?.session);
+      return grandkids();
+    });
+  }, 40_000);
+
+  it("cause 7, the bridge closes mid-turn: the setsid child is gone by 10 s", async (ctx) => {
+    // Spec: L-3 cause 7 — bridge.close() with a turn running.
+    await sessionIsGone(ctx, async () => {
+      await startBridge({ opts: { killGraceMs: 400 } });
+      await openTurn(secret, { engine: "codex", prompt: "GRANDKIDS" });
+      const g = await seenSession();
+      await bridge.close();
+      return g;
+    });
+  }, 40_000);
 });
 
 describe("HK2-01 endCodexTree guards", () => {
