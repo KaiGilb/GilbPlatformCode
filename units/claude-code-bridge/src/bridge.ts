@@ -1163,6 +1163,12 @@ export function parseWinProcs(text: string): ProcRow[] | null {
   }
 }
 export const WINDOWS_PROC_SCRIPT = "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress";
+/**
+ * How long close() lets an open response finish before it cuts the connections. Measured on GitHub's Windows runner: taskkill returns about 100 ms
+ * before the child's 'close', so the turn's SSE response is still open when close() starts, and server.close() then waited for the keep-alive
+ * timeout (3 to 4 s; runs 46020685013 and 46020700133). 250 ms is a grace for a response that is finishing its last write.
+ */
+const CLOSE_GRACE_MS = 250;
 // Batch F diagnostic: removed before merge. X2A timing lines for what bridge.close() and the Stop route wait on.
 const X2A_T0 = Date.now();
 const x2a = (m: string) => { try { console.error(`[X2A] +${Date.now() - X2A_T0}ms ${m}`); } catch { /* diagnostic only */ } };
@@ -5750,7 +5756,15 @@ export function createBridge(opts: BridgeOptions = {}) {
     x2a(`closeBridge starts: turns=${turns.size} liveGroups=${liveGroups.size} platform=${platform}`);
     const previewsClosed = closeAllPreviews().then(() => x2a("closeBridge: closeAllPreviews done"));
     const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => x2a("closeBridge: all stopChild done")).then(() => killAllTracked()).then(() => x2a("closeBridge: killAllTracked done")).then(() => previewsClosed);
-    return stopped.then(() => new Promise<void>((resolve) => { x2a("closeBridge: server.close() called"); server.close(() => { x2a("closeBridge: server.close() callback"); releaseLock(); resolve(); }); }));
+    return stopped.then(() => new Promise<void>((resolve) => {
+      x2a("closeBridge: server.close() called");
+      // The children are dead by now, so a response still open belongs to a dead turn. server.close() closes only the connections that are idle
+      // at the moment it is called, so close those first, and give a response that is finishing its last write a short grace before cutting the rest.
+      // (closeIdleConnections / closeAllConnections exist from Node 18.2; the unit allows Node >=18, so each is checked.)
+      if (typeof server.closeIdleConnections === "function") server.closeIdleConnections();
+      const cut = setTimeout(() => { if (typeof server.closeAllConnections === "function") server.closeAllConnections(); }, CLOSE_GRACE_MS);
+      server.close(() => { clearTimeout(cut); x2a("closeBridge: server.close() callback"); releaseLock(); resolve(); });
+    }));
   };
   const server = http.createServer((req, res) => {
     handle(req, res).catch((e) => {

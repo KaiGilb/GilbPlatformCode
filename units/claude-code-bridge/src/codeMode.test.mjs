@@ -203,6 +203,23 @@ describe("the turn body", () => {
   });
 });
 
+describe("shutdown while a code turn runs", () => {
+  // Spec: the bridge shuts down promptly while a code turn runs. close() stopped the child, but the turn's response was still open, and
+  // server.close() waited for the keep-alive timeout (3 to 4 s on Windows) before it called back.
+  it("the bridge shuts down promptly while a code turn runs", async () => {
+    const secret = await start();
+    const first = post(secret, T({ mode: "code", prompt: "WAITFOREVER" }));
+    for (let i = 0; i < 100 && runs().length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    expect(runs()).toHaveLength(1);
+    const t0 = Date.now();
+    await bridge.close();
+    const took = Date.now() - t0;
+    bridge = undefined;
+    await first.catch(() => {});
+    expect(took).toBeLessThan(1000);
+  });
+});
+
 describe("code turn events", () => {
   it("CODEWRITE: activity, files_changed before the message, message with mode code", async () => {
     const secret = await start();
