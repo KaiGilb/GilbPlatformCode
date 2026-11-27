@@ -366,7 +366,11 @@ describe("snapshot: the symlink swap race", () => {
     expect(snapHasMarker()).toBe(false);
   }, 120_000);
 
-  it("snapshotBuild alone: 300 copies while dist/sub is swapped never hold a marker byte", async () => {
+  // Harness size, not a product Value: how many copies the test makes while the swapper runs. One copy of this 401-file fixture takes 37 ms on macOS and
+  // 125 to 486 ms on GitHub's Windows runner (Defender off, symlinks cost 1 ms: the per-file open, fstat and realpath of the safe copy), so 300 copies took
+  // 68 to 177 s there against the 120 s test timeout (runs 46031602424 to 46033129124), and the timed-out test left its swapper running into the next tests.
+  const SWAP_COPIES = process.platform === "win32" ? 60 : 300;
+  it(`snapshotBuild alone: ${SWAP_COPIES} copies while dist/sub is swapped never hold a marker byte`, async () => {
     // Spec: H1a.F1h — the copy checks (no link followed, same file, still inside) hold under the swap (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
     await start();
     const p = raceFixture(await freePort());
@@ -374,14 +378,17 @@ describe("snapshot: the symlink swap race", () => {
     const stop = path.join(dir, "stop-swap");
     const kid = swapper(dist, "sub", stop);
     const out = { ok: 0, changed: 0, marker: 0 };
-    for (let i = 0; i < 300; i++) {
-      const dest = path.join(dir, `direct-${i}`);
-      try { await snapshotBuild(dist, dest); out.ok += 1; } catch (e) { if (e.body?.error === "build-changed") out.changed += 1; else throw e; }
-      if (fs.existsSync(dest) && allFiles(dest).some((f) => fs.readFileSync(f, "utf8").includes(MARKER))) out.marker += 1;
+    try {
+      for (let i = 0; i < SWAP_COPIES; i++) {
+        const dest = path.join(dir, `direct-${i}`);
+        try { await snapshotBuild(dist, dest); out.ok += 1; } catch (e) { if (e.body?.error === "build-changed") out.changed += 1; else throw e; }
+        if (fs.existsSync(dest) && allFiles(dest).some((f) => fs.readFileSync(f, "utf8").includes(MARKER))) out.marker += 1;
+      }
+    } finally {
+      await stopSwap(stop, [kid]); // also when a copy throws: a swapper left running keeps renaming inside the folder the teardown removes
     }
-    await stopSwap(stop, [kid]);
     expect(out.marker).toBe(0);
-    expect(out.ok + out.changed).toBe(300);
+    expect(out.ok + out.changed).toBe(SWAP_COPIES);
   }, 120_000);
 
   it("copies no symlink and no hard-linked file, and skips dot-entries", async () => {

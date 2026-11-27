@@ -38,9 +38,6 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm ci
-      # Batch F diagnostic: removed before merge. What does one snapshotBuild copy cost on the Windows runner? Measures only.
-      - name: Batch F diagnostic - copy cost
-        run: node scripts/diag-copy-cost.mjs
       - name: Build the bridge and confirm the committed file is the build
         run: |
           npm run build:bridge
