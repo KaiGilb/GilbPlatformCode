@@ -84,7 +84,7 @@ const call = async (b, route, body = {}, secret = b.secret) => {
 };
 const helloUnpaired = async (b) => (await fetch(`${b.base}/v1/hello`, { headers: { origin: APP } })).text();
 const helloPaired = async (b) => (await fetch(`${b.base}/v1/hello`, { headers: hdr(b.secret) })).json();
-async function turn(b, extra = {}, signal = undefined) {
+async function turn(b, extra = {}, signal = undefined, onEvent = undefined) {
   const res = await fetch(`${b.base}/v1/turn`, { method: "POST", headers: hdr(b.secret), body: JSON.stringify({ system: "You are the agent.", prompt: "hello", ...extra }), signal });
   if (res.status !== 200) return { status: res.status, json: await res.json(), events: [] };
   const events = [];
@@ -101,7 +101,7 @@ async function turn(b, extra = {}, signal = undefined) {
       buf = buf.slice(i + 2);
       const e = /event: (.*)/.exec(blk)?.[1];
       const d = /data: (.*)/.exec(blk)?.[1];
-      if (e) events.push([e, JSON.parse(d)]);
+      if (e) { events.push([e, JSON.parse(d)]); onEvent?.(e); }
     }
   }
   return { status: 200, events };
@@ -746,8 +746,11 @@ describe("fix round 3 (R3, H1)", () => {
     for (const p of ["p1", "other"]) fs.mkdirSync(path.join(ws, p));
     const b = await start({ workspace: ws, killGraceMs: 6000 });
     const ctl = new AbortController();
-    const first = turn(b, { ...code("WAITFOREVER IGNORETERM"), project: "p1" }, ctl.signal).catch(() => {});
-    expect(await until(() => pids().length === 1)).toBe(true);
+    // Wait for the turn's "status" event, not the child's log row: the row comes before the bridge has read the child's init, and a rename in that gap
+    // is seen by the init folder check (same race as T4-1 in liveInP1: code mode off, 409 instead of 429).
+    let statusSeen = false;
+    const first = turn(b, { ...code("WAITFOREVER IGNORETERM"), project: "p1" }, ctl.signal, (e) => { if (e === "status") statusSeen = true; }).catch(() => {});
+    expect(await until(() => pids().length === 1 && statusSeen)).toBe(true);
     const pid = pids()[0];
     // 1. the turn is in the table (its page is still there) and its folder is renamed: the same folder, so the same refusal
     fs.renameSync(path.join(ws, "p1"), path.join(ws, "p2"));
@@ -796,8 +799,12 @@ describe("fix round 4 (T4-1): the one-turn guard holds a folder by device:inode 
     const chosen = { n: 0 };
     const b = await start({ workspace: ws, killGraceMs: 4000, chooseFolder: async () => { chosen.n++; return ws; } });
     const ctl = new AbortController();
-    const first = turn(b, { ...code(prompt), project: "p1" }, ctl.signal).catch(() => {});
-    expect(await until(() => pids().length === 1)).toBe(true);
+    // The turn's "status" event is sent when the child's first init is read, in the same step as the folder check of that init, so once the page has it
+    // the child's folder was accepted (or the turn is already being stopped). The child's log row comes earlier, before the init is read: a test that
+    // swaps the folder on that row races the bridge's own check (it then saw "init-first-not-root", turned code mode off and answered 409, not 429).
+    let statusSeen = false;
+    const first = turn(b, { ...code(prompt), project: "p1" }, ctl.signal, (e) => { if (e === "status") statusSeen = true; }).catch(() => {});
+    expect(await until(() => pids().length === 1 && statusSeen)).toBe(true);
     return { b, ws, pid: pids()[0], ctl, first, chosen };
   }
   /** Deletes the folder and makes an empty one at the same path: a new device:inode at the old real path. */

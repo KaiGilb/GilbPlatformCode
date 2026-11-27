@@ -302,10 +302,63 @@ describe("POST /v1/projects/create makes a git repo (friction 47)", () => {
     try {
       await start({ env: { GIT_TEMPLATE_DIR: tpl } });
       expect((await api("/v1/projects/create", { name: "alpha" })).status).toBe(200);
+      expect(fs.statSync(path.join(ws, "alpha", ".git")).isDirectory()).toBe(true); // a missing repo must not pass as "no hooks"
       const hooks = path.join(ws, "alpha", ".git", "hooks");
       expect(fs.existsSync(hooks) ? fs.readdirSync(hooks) : []).toEqual([]);
     } finally {
       fs.rmSync(tpl, { recursive: true, force: true });
+    }
+  });
+
+  // Spec: friction #47 — the person's global git config is not read: its init.defaultBranch and core.hooksPath do not shape the new repo.
+  it("the person's global git config is not read", async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-gcfg-"));
+    const hookDir = path.join(home, "globalhooks");
+    fs.mkdirSync(hookDir);
+    fs.writeFileSync(path.join(hookDir, "pre-commit"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    // git reads forward slashes on every platform, and a backslash in a config value would be an escape
+    const hookPath = hookDir.replace(/\\/g, "/");
+    fs.writeFileSync(path.join(home, ".gitconfig"), `[init]\n\tdefaultBranch = leakedfromglobal\n[core]\n\thooksPath = ${hookPath}\n`);
+    try {
+      await start({ env: { HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, "xdg") } });
+      expect((await api("/v1/projects/create", { name: "alpha" })).status).toBe(200);
+      const g = path.join(ws, "alpha", ".git");
+      expect(fs.readFileSync(path.join(g, "HEAD"), "utf8")).not.toContain("leakedfromglobal");
+      const cfg = fs.readFileSync(path.join(g, "config"), "utf8");
+      expect(cfg).not.toContain("leakedfromglobal");
+      expect(cfg).not.toContain(hookPath);
+      expect(fs.existsSync(path.join(g, "hooks")) ? fs.readdirSync(path.join(g, "hooks")) : []).toEqual([]);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  // Spec: friction #47 — a failed git init is only logged, and git's own words go in as one line: its line break must not start a second log line.
+  it("a failing git's stderr is logged as one line (no line break of git's own)", async () => {
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-fakegit-"));
+    const isWin = process.platform === "win32";
+    const logs = [];
+    const env = {};
+    if (isWin) {
+      // Windows starts git.exe only (no shell, no .cmd): a copy of node that fails at load through NODE_OPTIONS stands in for git.
+      fs.copyFileSync(process.execPath, path.join(bin, "git.exe"));
+      fs.writeFileSync(path.join(bin, "failgit.cjs"), 'process.stderr.write("a\\nforged line"); process.exit(1);\n');
+      env.NODE_OPTIONS = `--require=${path.join(bin, "failgit.cjs").replace(/\\/g, "/")}`;
+    } else {
+      fs.writeFileSync(path.join(bin, "git"), "#!/bin/sh\nprintf 'a\\nforged line' >&2\nexit 1\n", { mode: 0o755 });
+    }
+    const pathKey = Object.keys(process.env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+    env[pathKey] = `${bin}${path.delimiter}${process.env[pathKey] ?? ""}`;
+    try {
+      await start({ env, bridgeOpts: { log: (l) => logs.push(l) } });
+      const r = await api("/v1/projects/create", { name: "alpha" });
+      expect(r.status).toBe(200);
+      expect(r.json).toEqual({ name: "alpha", npmrc: true });
+      const failed = logs.filter((l) => l.includes("git init failed"));
+      expect(failed).toEqual(["project alpha: git init failed: 1: aforged line"]);
+      expect(logs.some((l) => l === "forged line" || l.startsWith("forged line"))).toBe(false);
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
     }
   });
 

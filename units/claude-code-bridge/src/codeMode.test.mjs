@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import http from "node:http";
+import net from "node:net";
+import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { codeTurnSettings, computerSandboxSettings, createBridge, parseCli, resolveThroughLinks, validateWorkspace, CODE_TOOLS, WEB_TOOLS } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
@@ -195,6 +198,144 @@ describe("the turn body", () => {
     await bridge.close();
     bridge = undefined;
     await first.catch(() => {});
+  });
+});
+
+// Windows only: close() takes a last look at the process list, and on GitHub's Windows runner that PowerShell listing sometimes takes over 1.5 s, so
+// the bridge caps the wait (SNAPSHOT_CAP_MS = 1500 in bridge.ts, not exported, so it is repeated here) and goes on. Measured: 5 of about 20 listings were
+// capped at 1511 to 1514 ms (runs 46026429688, 46026459769). The listing stays because it catches processes that left the tree. So a close there is
+// bounded by the cap plus 500 ms; everywhere else it stays under 1 s. This is a different bound, not a skip.
+const WINDOWS_CLOSE_BOUND_MS = 1500 + 500;
+describe("shutdown while a code turn runs", () => {
+  // Spec: the bridge shuts down promptly while a code turn runs. close() stopped the child, but the turn's response was still open, and
+  // server.close() waited for the keep-alive timeout (3 to 4 s on Windows) before it called back.
+  it("the bridge shuts down promptly while a code turn runs", async () => {
+    const secret = await start();
+    const first = post(secret, T({ mode: "code", prompt: "WAITFOREVER" }));
+    for (let i = 0; i < 100 && runs().length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    expect(runs()).toHaveLength(1);
+    const t0 = Date.now();
+    await bridge.close();
+    const took = Date.now() - t0;
+    bridge = undefined;
+    await first.catch(() => {});
+    expect(took).toBeLessThan(process.platform === "win32" ? WINDOWS_CLOSE_BOUND_MS : 1000);
+  });
+
+  // Spec: close() waits for chat children to exit. A chat child whose page hung up is in neither the turns table nor the live groups; its stop is the
+  // unawaited one from the hang-up, so close() used to return while it was still ending (an update could then replace the file under it). The stand-in
+  // SLOWEXIT800 exits 800 ms after its first SIGTERM (longer than the 250 ms grace close() gives open connections, so a close that does not wait shows), which makes the order visible off Windows (a stand-in; on Windows taskkill ends it at once).
+  it("close() returns only after a chat turn's child (page already gone) has exited", async () => {
+    const listed = (pid) => {
+      if (process.platform !== "win32") { try { process.kill(pid, 0); return true; } catch { return false; } }
+      return execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/NH"], { encoding: "utf8" }).includes(` ${pid} `);
+    };
+    const secret = await start();
+    const ctl = new AbortController();
+    const hung = fetch(`${base}/v1/turn`, { method: "POST", signal: ctl.signal, headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify(T({ prompt: "SLOWEXIT800 WAITFOREVER" })) }).then((r) => r.text()).catch(() => {});
+    for (let i = 0; i < 100 && runs().length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    const pid = runs()[0].pid;
+    expect(listed(pid)).toBe(true);
+    ctl.abort(); // the page goes away; the bridge stops the child (unawaited)
+    await hung;
+    await new Promise((r) => setTimeout(r, 100)); // the bridge has seen the hang-up and sent the signal; the child is still ending
+    const t0 = Date.now();
+    await bridge.close();
+    const took = Date.now() - t0;
+    bridge = undefined;
+    expect(listed(pid)).toBe(false);
+    expect(took).toBeLessThan(process.platform === "win32" ? WINDOWS_CLOSE_BOUND_MS : 1000);
+  });
+
+  // Spec: a chat child that ignores SIGTERM is ended by close() too: SIGTERM, then SIGKILL after the bridge's grace (killGraceMs, here 300 ms), inside
+  // the close budget. Off Windows a chat child used to get SIGTERM only and outlived close() (and the restart's exit 75) for as long as it ignored it.
+  // The stand-in IGNORETERMFOREVER ignores SIGTERM for good (a stand-in; on Windows taskkill /F ends it regardless of signals).
+  it("close() ends a chat child that ignores SIGTERM (page already gone)", async () => {
+    const listed = (pid) => {
+      if (process.platform !== "win32") { try { process.kill(pid, 0); return true; } catch { return false; } }
+      return execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/NH"], { encoding: "utf8" }).includes(` ${pid} `);
+    };
+    const secret = await start({ bridgeOpts: { killGraceMs: 300 } });
+    const ctl = new AbortController();
+    const hung = fetch(`${base}/v1/turn`, { method: "POST", signal: ctl.signal, headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify(T({ prompt: "IGNORETERMFOREVER WAITFOREVER" })) }).then((r) => r.text()).catch(() => {});
+    for (let i = 0; i < 100 && runs().length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    const pid = runs()[0].pid;
+    try {
+      ctl.abort();
+      await hung;
+      await new Promise((r) => setTimeout(r, 100));
+      const t0 = Date.now();
+      await bridge.close();
+      const took = Date.now() - t0;
+      bridge = undefined;
+      expect(listed(pid)).toBe(false);
+      expect(took).toBeLessThan(process.platform === "win32" ? WINDOWS_CLOSE_BOUND_MS : 1000);
+    } finally {
+      try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+    }
+  });
+});
+
+// Spec: close() waits for process listings at most SNAPSHOT_CAP_MS in all (bridge.ts, not exported: repeated here). A tracked code turn with a
+// descendant makes close() list processes several times (the last look in stopChild, the look in killAllTracked, and two inside killEntries); each
+// used to wait up to the cap by itself, so a slow listing on a later call gave a close of 3 to 4.5 s (tester's probe, bridge 0.3.25 round 1).
+// The slow listing is injected through the bridge's own `procList` option: from the 1st, 3rd, 4th and 5th listing of the close on (every later one is
+// slow too). "From" and not "only": which call is which depends on how fast the stand-in's tracking ends, and the 3rd listing is often the unawaited one
+// of the child's own exit, so a single slow call 3 never reached the close.
+const LISTING_CAP_MS = 1500;
+describe("close() waits for process listings within one budget", () => {
+  for (const slowCall of [1, 3, 4, 5]) {
+    it(`slow listings from call ${slowCall} on (3 s each) still close within the cap + 500 ms`, async () => {
+      const stray = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore" });
+      try {
+        let claudePid = 0;
+        let calls = 0;
+        const procList = async () => {
+          if (!claudePid) return []; // before the turn's child is known: the look at its start
+          const n = ++calls;
+          if (n >= slowCall) await new Promise((r) => setTimeout(r, 3000));
+          const me = { pid: claudePid, ppid: 1, start: "C" };
+          return n >= 2 ? [me, { pid: stray.pid, ppid: claudePid, start: "S1" }] : [me]; // a descendant of the turn's child from the second look on
+        };
+        const secret = await start({ bridgeOpts: { fullAccess: true, snapshotMs: 600_000, killGraceMs: 300, procList } });
+        const first = post(secret, T({ mode: "code", prompt: "WAITFOREVER" }));
+        for (let i = 0; i < 100 && runs().length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+        claudePid = runs()[0].pid;
+        await new Promise((r) => setTimeout(r, 800));
+        const t0 = Date.now();
+        await bridge.close();
+        const took = Date.now() - t0;
+        bridge = undefined;
+        await first.catch(() => {});
+        expect(took).toBeLessThan(LISTING_CAP_MS + 500);
+      } finally {
+        try { process.kill(stray.pid, "SIGKILL"); } catch { /* already ended */ }
+      }
+    });
+  }
+});
+
+// Spec: close() cuts what is still open after a short grace. A half-sent request (its response will never start) and an idle keep-alive connection
+// are open at close; close() must return within 1 s. Without closeAllConnections the half-sent request holds server.close() for seconds (5.8 s measured
+// on the bridge before 0.3.25); the idle connection is closed by closeIdleConnections or by Node's own server.close() (Node 19 and later), so on Node 19+
+// removing closeIdleConnections alone cannot show in any test.
+describe("close() with connections still open", () => {
+  it("returns within 1 s with a half-sent request and an idle keep-alive connection open", async () => {
+    await start();
+    const half = net.connect(bridge.port, "127.0.0.1");
+    await new Promise((r) => half.once("connect", r));
+    half.on("error", () => {});
+    half.write("POST /v1/turn HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{\"x\":");
+    const agent = new http.Agent({ keepAlive: true });
+    await new Promise((resolve, reject) => http.get({ host: "127.0.0.1", port: bridge.port, path: "/v1/hello", agent }, (r) => { r.resume(); r.on("end", resolve); }).on("error", reject));
+    await new Promise((r) => setTimeout(r, 100));
+    const t0 = Date.now();
+    await bridge.close();
+    const took = Date.now() - t0;
+    bridge = undefined;
+    half.destroy();
+    agent.destroy();
+    expect(took).toBeLessThan(1000);
   });
 });
 

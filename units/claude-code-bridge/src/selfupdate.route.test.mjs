@@ -6,7 +6,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { BRIDGE_BUILD, buildPlist, createBridge, isSupervised, updateSignedText } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
@@ -22,10 +22,10 @@ const FILE = path.resolve(os.tmpdir(), "su-fake-home", "bridge.mjs");
 
 const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
 const KEYS = [{ id: "bu1", key: publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("base64") }];
-const NEW = new TextEncoder().encode('export const BRIDGE_BUILD = "0.3.25";\n// next\n');
+const NEW = new TextEncoder().encode('export const BRIDGE_BUILD = "0.3.26";\n// next\n');
 const OLD = new TextEncoder().encode("old");
 const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
-function signed(version = "0.3.25") {
+function signed(version = "0.3.26") {
   const f = { version, sha256: sha(NEW), size: NEW.length, signedAt: new Date().toISOString() };
   return { format: 1, ...f, keyId: "bu1", signature: crypto.sign(null, Buffer.from(updateSignedText({ origin: ORIGIN, ...f }), "utf8"), privateKey).toString("base64") };
 }
@@ -53,7 +53,7 @@ function fakes(over = {}) {
       lstat: async () => ({ isFile: () => true, isSymbolicLink: () => false }),
       stat: async () => ({ uid: process.getuid?.() ?? 0, mode: 0o40755 }),
     },
-    selfTest: async () => ({ code: 0, stdout: "build 0.3.25\n" }),
+    selfTest: async () => ({ code: 0, stdout: "build 0.3.26\n" }),
     ...over.deps,
   };
   return { d, calls, files };
@@ -123,7 +123,7 @@ describe("POST /v1/update", () => {
     const r = await post(secret);
     order.push(["received"]);
     expect(r.status).toBe(200);
-    expect(r.json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.25", restart: "automatic" });
+    expect(r.json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.26", restart: "automatic" });
     expect(files.get(FILE)).toBe(NEW);
     await until(() => order.some((o) => o[0] === "exit"));
     expect(order).toEqual([["received"], ["exit", 75]]);
@@ -134,7 +134,7 @@ describe("POST /v1/update", () => {
     const { d } = fakes();
     const secret = await start({ updateDeps: d, exit, label: "com.test.not-this-one", env: {} });
     const r = await post(secret);
-    expect(r.json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.25", restart: "manual" });
+    expect(r.json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.26", restart: "manual" });
     await new Promise((x) => setTimeout(x, 400));
     expect(exit).not.toHaveBeenCalled();
   });
@@ -160,7 +160,7 @@ describe("POST /v1/update", () => {
   it("U6 check:true answers { current, latest, available } and writes no file", async () => {
     const a = fakes();
     let secret = await start({ updateDeps: a.d });
-    expect(await post(secret, { check: true })).toEqual({ status: 200, json: { current: BRIDGE_BUILD, latest: "0.3.25", available: true } });
+    expect(await post(secret, { check: true })).toEqual({ status: 200, json: { current: BRIDGE_BUILD, latest: "0.3.26", available: true } });
     expect(a.calls.map((c) => c[0])).toEqual(["fetch"]);
     await bridge.close();
     const b = fakes({ manifest: signed("0.3.16") });
@@ -246,7 +246,7 @@ describe("command line", () => {
     const r = spawnSync(process.execPath, [BUILT, "--selftest", "--port", String(free), "--state-dir", "/nonexistent/should-not-be-read"], { encoding: "utf8", timeout: 15000 });
     expect(r.status).toBe(0);
     expect(r.stdout.trim()).toBe(`build ${BRIDGE_BUILD}`);
-    expect(BRIDGE_BUILD).toBe("0.3.24");
+    expect(BRIDGE_BUILD).toBe("0.3.25");
     await new Promise((resolve, reject) => { const s = net.createServer().once("error", reject).listen(free, "127.0.0.1", () => s.close(() => resolve())); });
   });
 
@@ -335,6 +335,79 @@ describe("SU-5a: no turn during an update, and a clean exit", () => {
     turn.ctl.abort(); // the turn ends
     await until(() => exits.length > 0);
     expect(exits).toEqual([[75, false]]);
+  });
+
+  // Spec: the restart's close() waits for chat children. The page hangs up, the turn leaves the table, and the restart goes on to close() and exit(75); the
+  // chat child (a stand-in that exits 800 ms after its first SIGTERM) must be gone when exit is called, or a new bridge.mjs could be put in place under it.
+  it("M1b the restart waits for the chat child to exit before exit 75", async () => {
+    const exits = [];
+    const alivePid = (pid) => {
+      if (process.platform !== "win32") { try { process.kill(pid, 0); return true; } catch { return false; } }
+      return execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/NH"], { encoding: "utf8" }).includes(` ${pid} `);
+    };
+    const logFile = path.join(os.tmpdir(), `su5a-m1c-${process.pid}.log`);
+    fs.rmSync(logFile, { force: true });
+    extraLogs.push(logFile);
+    let turn;
+    let pid = 0;
+    let aliveAtExit = null;
+    const secret = await start({
+      env: { GILB_BRIDGE_SUPERVISED: "1", FAKE_CLAUDE_LOG: logFile },
+      updateRestart: { pollMs: 20, capMs: 20000 },
+      exit: (c) => { aliveAtExit = alivePid(pid); exits.push([c, bridge.server.listening]); },
+      updateRun: async () => {
+        turn = await startTurn(secret, "SLOWEXIT800 WAITFOREVER");
+        await until(async () => (await turnCount(secret)) > 0);
+        await until(() => logRows(logFile, "run").length > 0);
+        pid = logRows(logFile, "run")[0].pid;
+        return { updated: true, from: BRIDGE_BUILD, to: "0.3.22" };
+      },
+    });
+    expect((await post(secret)).json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.22", restart: "automatic" });
+    await new Promise((x) => setTimeout(x, 300));
+    expect(exits).toEqual([]);
+    turn.ctl.abort();
+    await until(() => exits.length > 0);
+    expect(exits).toEqual([[75, false]]);
+    expect(aliveAtExit).toBe(false); // the chat child had exited when exit(75) was called
+  });
+
+  // Spec: the same at the restart, for a chat child that ignores SIGTERM (stand-in IGNORETERMFOREVER): exit(75) is called with it gone (SIGKILL after killGraceMs).
+  it("M1b the restart ends a chat child that ignores SIGTERM before exit 75", async () => {
+    const exits = [];
+    const alivePid = (pid) => {
+      if (process.platform !== "win32") { try { process.kill(pid, 0); return true; } catch { return false; } }
+      return execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/NH"], { encoding: "utf8" }).includes(` ${pid} `);
+    };
+    const logFile = path.join(os.tmpdir(), `su5a-m1d-${process.pid}.log`);
+    fs.rmSync(logFile, { force: true });
+    extraLogs.push(logFile);
+    let turn;
+    let pid = 0;
+    let aliveAtExit = null;
+    const secret = await start({
+      env: { GILB_BRIDGE_SUPERVISED: "1", FAKE_CLAUDE_LOG: logFile },
+      killGraceMs: 300,
+      updateRestart: { pollMs: 20, capMs: 20000 },
+      exit: (c) => { aliveAtExit = alivePid(pid); exits.push([c, bridge.server.listening]); },
+      updateRun: async () => {
+        turn = await startTurn(secret, "IGNORETERMFOREVER WAITFOREVER");
+        await until(async () => (await turnCount(secret)) > 0);
+        await until(() => logRows(logFile, "run").length > 0);
+        pid = logRows(logFile, "run")[0].pid;
+        return { updated: true, from: BRIDGE_BUILD, to: "0.3.22" };
+      },
+    });
+    try {
+      expect((await post(secret)).json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.22", restart: "automatic" });
+      await new Promise((x) => setTimeout(x, 300));
+      turn.ctl.abort();
+      await until(() => exits.length > 0);
+      expect(exits).toEqual([[75, false]]);
+      expect(aliveAtExit).toBe(false);
+    } finally {
+      try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+    }
   });
 
   it("M1b after the cap the running turn is stopped (its child gets SIGTERM), then exit 75", async () => {

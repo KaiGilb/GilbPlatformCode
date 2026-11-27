@@ -9,6 +9,7 @@ vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 }); // a loaded machine ru
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createBridge } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
@@ -233,6 +234,28 @@ describe("POST /v1/turn/cancel", () => {
     // the project is free again
     const again = await openTurn(a, { mode: "code", prompt: "hello" });
     expect(again.status).toBe(200);
+  });
+
+  // Spec: Stop ends a running code turn's child and grandchild. The person's Stop is this route; the child is a process group leader (off Windows) or a
+  // tree ended by taskkill /T /F (Windows), so a process the child started must go too. Checked with the platform's own process listing, not with the
+  // bridge's bookkeeping. Measured on GitHub's Windows runner: both gone within 250 ms of the answer.
+  it("Stop ends a running code turn's child and grandchild", async () => {
+    const listed = (pid) => {
+      if (!isWin) return pidAlive(pid);
+      return execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/NH"], { encoding: "utf8" }).includes(` ${pid} `);
+    };
+    const [a] = await start();
+    const t = await openTurn(a, { mode: "code", prompt: "GRP_PLAIN WAITFOREVER" });
+    await until(() => t.turnId && logRows("run").length === 1 && logRows("grp").length === 1);
+    const child = logRows("run")[0].pid;
+    const grand = logRows("grp")[0].pid;
+    expect(listed(child)).toBe(true);
+    expect(listed(grand)).toBe(true);
+    expect((await api(a, "/v1/turn/cancel", { turnId: t.turnId })).json).toEqual({ cancelled: true });
+    await until(() => !listed(child) && !listed(grand));
+    await t.done;
+    expect(listed(child)).toBe(false);
+    expect(listed(grand)).toBe(false);
   });
 
   it("a hand-off id cannot be cancelled by itself", async () => {

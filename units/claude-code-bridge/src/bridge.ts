@@ -280,7 +280,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.24";
+export const BRIDGE_BUILD = "0.3.25";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1163,6 +1163,18 @@ export function parseWinProcs(text: string): ProcRow[] | null {
   }
 }
 export const WINDOWS_PROC_SCRIPT = "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress";
+/**
+ * How long close() lets an open response finish before it cuts the connections. Measured on GitHub's Windows runner: taskkill returns about 100 ms
+ * before the child's 'close', so the turn's SSE response is still open when close() starts, and server.close() then waited for the keep-alive
+ * timeout (3 to 4 s; runs 46020685013 and 46020700133). 250 ms is a grace for a response that is finishing its last write.
+ */
+const CLOSE_GRACE_MS = 250;
+/**
+ * How long a stop or a close waits for a last look at the process list before it goes on with what is already known. Off Windows the list is `ps`
+ * (about 20 ms); on Windows it is a PowerShell start that took several seconds on GitHub's runner (run 46025210385: a whole close of 4891 ms), and a
+ * stop must not wait that long. The look is still taken, because it finds processes that left the tree; it just cannot hold the stop.
+ */
+const SNAPSHOT_CAP_MS = 1500;
 type ListRun = (file: string, args: string[], env: NodeJS.ProcessEnv) => Promise<string | null>;
 const realListRun: ListRun = (file, args, env) =>
   new Promise((resolve) => {
@@ -1251,8 +1263,20 @@ export function killChild(child: ChildProcess | null | undefined, env: NodeJS.Pr
   if (platform !== "win32") {
     const leader = (child as unknown as Record<symbol, number | undefined>)[GROUP_LEADER];
     if (leader !== undefined) return killGroup(leader, o.graceMs);
+    // A chat child leads no group of its own: SIGTERM it, and if it is still there after the same grace a code child's group gets, SIGKILL it.
     child.kill("SIGTERM");
-    return Promise.resolve();
+    if (typeof child.once !== "function" || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let hard: NodeJS.Timeout | undefined;
+      const done = () => { clearTimeout(soft); clearTimeout(hard); resolve(); };
+      const soft = setTimeout(() => {
+        try { child.kill("SIGKILL"); } catch { /* gone */ }
+        hard = setTimeout(done, 3000); // as killGroup: a last wait for the exit after the SIGKILL
+        hard.unref();
+      }, o.graceMs ?? KILL_GRACE_MS);
+      soft.unref();
+      child.once("exit", done);
+    });
   }
   const pid = child.pid;
   const root = envGet(env, "SystemRoot") ?? envGet(env, "windir") ?? "C:\\Windows";
@@ -3308,10 +3332,32 @@ export function createBridge(opts: BridgeOptions = {}) {
   let port = opts.port ?? DEFAULT_PORT;
   // How to start claude, worked out once (Windows: never through a shell; a claude that cannot be started safely is refused).
   const launch = resolveClaudeLaunch(claudeBin, env, opts.platformOpts);
+  /**
+   * The budget for the process listings on the close path. close() sets the moment it ends (SNAPSHOT_CAP_MS after it starts) and every listing it
+   * waits for (the last look in stopChild, the look in killAllTracked, and the two inside killEntries) shares it, so the whole close waits at most
+   * that long for listings, not once per listing. Outside close it is null: a stop waits at most SNAPSHOT_CAP_MS for its own look, and the
+   * periodic tracking is never capped.
+   */
+  let closeListingDeadline: number | null = null;
+  let closeCapLogged = false;
+  const TIMED_OUT = Symbol("listing budget spent");
+  const listingLeft = () => (closeListingDeadline === null ? SNAPSHOT_CAP_MS : Math.max(0, closeListingDeadline - Date.now()));
+  async function withinListingBudget<T>(p: Promise<T>): Promise<T | typeof TIMED_OUT> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([p, new Promise<typeof TIMED_OUT>((r) => { timer = setTimeout(() => r(TIMED_OUT), listingLeft()); timer.unref(); })]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  const logListingCap = () => {
+    if (closeListingDeadline !== null) { if (closeCapLogged) return; closeCapLogged = true; }
+    log(`close: process listing took over ${SNAPSHOT_CAP_MS} ms; killed the tracked tree only`);
+  };
   /** Stops a child (and its group). A tracked code child is looked at first, so what it started is known before the group is gone and its children are re-parented. */
   const stopChild = async (c: ChildProcess | null | undefined): Promise<void> => {
     const tr = c?.pid !== undefined ? tracks.get(c.pid) : undefined;
-    if (tr && platform !== "win32") await Promise.race([snapshotTrack(tr), new Promise((r) => setTimeout(r, 1500).unref())]); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
+    if (tr && platform !== "win32" && listingLeft() > 0) await withinListingBudget(snapshotTrack(tr)); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
     return killChild(c, env, { ...opts.platformOpts, graceMs: opts.killGraceMs });
   };
   /**
@@ -3320,6 +3366,12 @@ export function createBridge(opts: BridgeOptions = {}) {
    * left in its group is stopped too, and only then is it forgotten. ON is refused while this is not empty.
    */
   const liveGroups = new Map<number, ChildProcess>();
+  /**
+   * Chat children (and hand-offs) that have not exited. A chat child is in the turns table only while its page is there; after a hang-up it is in
+   * neither `turns` nor `liveGroups`, and its stop is the unawaited one from the hang-up. close() stops these too and waits for them to exit, inside
+   * its listing budget, so a bridge file replaced by an update, or a process that exits, is not left with a chat child still ending.
+   */
+  const liveChat = new Set<ChildProcess>();
   /**
    * The folder each live code child was started in, by pid: so a new code turn in that folder waits for the child, not only for the turns table.
    * Both keys are taken when the child starts and never updated (not on a rename, not when the folder is deleted); they go only when the child
@@ -3395,19 +3447,37 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** Ends recorded processes: SIGTERM, then SIGKILL, after a fresh look at each one's start time; whatever survives is remembered. Returns how many survive. */
   async function killEntries(entries: [number, string][]): Promise<number> {
     if (entries.length === 0) return 0;
-    const rows = await procList();
-    if (!rows) return entries.length;
+    const budgeted = closeListingDeadline !== null; // only close() has a budget; the tracking that runs while turns live is never capped
     const startOf = new Map(entries);
-    const left = await killPids(stillMatching(entries, rows), {
-      graceMs: opts.killGraceMs, platform, env, execFile: opts.platformOpts?.execFile,
-      stillMine: async (alive) => { const now2 = await procList(); return now2 ? stillMatching(alive.map((p): [number, string] => [p, startOf.get(p) ?? ""]), now2) : []; },
-    });
+    const listed = budgeted ? (listingLeft() > 0 ? await withinListingBudget(procList()) : TIMED_OUT) : await procList();
+    let left: number[];
+    if (listed === TIMED_OUT) {
+      // No fresh look in the budget: end what is already known, without checking start times again (they were recorded at the last look).
+      logListingCap();
+      left = await killPids(entries.map(([pid]) => pid), { graceMs: opts.killGraceMs, platform, env, execFile: opts.platformOpts?.execFile });
+    } else {
+      const rows = listed;
+      if (!rows) return entries.length;
+      left = await killPids(stillMatching(entries, rows), {
+        graceMs: opts.killGraceMs, platform, env, execFile: opts.platformOpts?.execFile,
+        stillMine: async (alive) => {
+          const now2 = budgeted ? (listingLeft() > 0 ? await withinListingBudget(procList()) : TIMED_OUT) : await procList();
+          if (now2 === TIMED_OUT) { logListingCap(); return alive; }
+          return now2 ? stillMatching(alive.map((p): [number, string] => [p, startOf.get(p) ?? ""]), now2) : [];
+        },
+      });
+    }
     for (const pid of left) residual.set(pid, startOf.get(pid) ?? "");
     return left.length;
   }
   /** Everything recorded below this install's code turns, except the turns in `except`: a fresh look first, then SIGTERM, SIGKILL, a wait. Returns how many are still alive. */
   async function killAllTracked(except: ReadonlySet<number> = new Set()): Promise<number> {
-    for (const tr of [...tracks.values()]) if (!except.has(tr.pid)) await snapshotTrack(tr);
+    for (const tr of [...tracks.values()]) {
+      if (except.has(tr.pid)) continue;
+      if (closeListingDeadline !== null && listingLeft() === 0) { logListingCap(); break; } // the budget is spent: no new listing is started
+      const seen = await withinListingBudget(snapshotTrack(tr).then(() => true, () => true));
+      if (seen === TIMED_OUT) logListingCap();
+    }
     const entries: [number, string][] = [];
     for (const tr of tracks.values()) if (!except.has(tr.pid)) entries.push(...tr.desc);
     return killEntries(entries);
@@ -4432,6 +4502,10 @@ export function createBridge(opts: BridgeOptions = {}) {
         if (child.pid !== undefined && scope) liveFolder.set(child.pid, { path: guardPath(scope.path), id: scope.id });
       }
       turn.child = child;
+      if (!turn.code) {
+        liveChat.add(child);
+        child.once("exit", () => liveChat.delete(child));
+      }
       let buf = "";
       let stderr = "";
       let model = "";
@@ -5073,13 +5147,19 @@ export function createBridge(opts: BridgeOptions = {}) {
     // info/attributes (gitPlaces) covers it: that deny is computed from repos that exist when a turn starts.
     // `--template=` copies no template, so no hooks arrive from the person's git setup; the config files of the person
     // are not read, and `core.hooksPath` is pinned off, so nothing in the environment can add a hook either.
+    // GIT_CONFIG_GLOBAL points at an empty place so the person's global git config is not read (their init.defaultBranch, core.hooksPath
+    // or any other setting must not shape this repo). On Windows that place is "NUL", not os.devNull: os.devNull there is `\\.\nul`, and
+    // Git for Windows 2.56.1 cannot open it ("fatal: unable to access '\\.\nul': Invalid argument", measured on GitHub's Windows runner,
+    // run 46016776658), so git init failed and no repo was made. Git's own words go into the log line below.
     try {
       execFileSync("git", ["-c", "core.hooksPath=/dev/null", "init", "--quiet", "--template=", path.join(workspace.path, name)], {
-        stdio: "ignore", timeout: 10_000,
-        env: { ...env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: "1", GIT_TEMPLATE_DIR: "" },
+        stdio: ["ignore", "ignore", "pipe"], timeout: 10_000, encoding: "utf8",
+        env: { ...env, GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : os.devNull, GIT_CONFIG_NOSYSTEM: "1", GIT_TEMPLATE_DIR: "" },
       });
     } catch (e) {
-      log(`project ${name}: git init failed: ${(e as ErrLike)?.code ?? (e as ErrLike)?.message ?? e}`);
+      const err = e as ErrLike & { status?: number | null; stderr?: unknown };
+      const words = typeof err.stderr === "string" ? cleanForLog(err.stderr.trim().slice(0, 300)) : ""; // git's words are not ours: no line break of theirs may start a second log line
+      log(`project ${name}: git init failed: ${cleanForLog(err.status ?? err.code ?? err.message ?? e)}${words ? `: ${words}` : ""}`);
     }
     opts.beforeProjectNpmrc?.(path.join(workspace.path, name));
     let npmrc = false;
@@ -5230,6 +5310,8 @@ export function createBridge(opts: BridgeOptions = {}) {
   async function restartAfterUpdate() {
     const pollMs = opts.updateRestart?.pollMs ?? 250;
     const capMs = opts.updateRestart?.capMs ?? 10 * 60 * 1000;
+    // The deferral watches turns and code groups only, not liveChat: a chat child whose page is gone is not waited for here. closeBridge, called
+    // below, stops the chat children that are left and waits for them to exit, so exit(75) never finds one still ending.
     if (turns.size > 0 || liveGroups.size > 0) {
       log("Update installed; restart deferred until the running turn ends");
       const capAt = Date.now() + capMs;
@@ -5718,9 +5800,25 @@ export function createBridge(opts: BridgeOptions = {}) {
   };
   const closeBridge = (): Promise<void> => {
     bridgeClosing = true; // from here no preview starts, even on a connection that is still open
+    closeListingDeadline = Date.now() + SNAPSHOT_CAP_MS;
+    closeCapLogged = false;
     const previewsClosed = closeAllPreviews();
-    const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => previewsClosed);
-    return stopped.then(() => new Promise<void>((resolve) => server.close(() => { releaseLock(); resolve(); })));
+    const stopChat = async (c: ChildProcess) => {
+      if (c.exitCode !== null || c.signalCode !== null) return;
+      const gone = new Promise<void>((r) => c.once("exit", () => r()));
+      // The same stop as the hang-up gives (SIGTERM, then SIGKILL after the grace), with the grace cut to what is left of the close budget, so a child
+      // that ignores SIGTERM is gone when close() returns and still cannot hold close() longer than the budget.
+      await withinListingBudget(Promise.all([killChild(c, env, { ...opts.platformOpts, graceMs: Math.min(opts.killGraceMs ?? KILL_GRACE_MS, listingLeft()) }), gone]));
+    };
+    const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)), [...liveChat].map(stopChat))).then(() => killAllTracked()).then(() => previewsClosed);
+    return stopped.then(() => new Promise<void>((resolve) => {
+      // The children are dead by now, so a response still open belongs to a dead turn. server.close() closes only the connections that are idle
+      // at the moment it is called, so close those first, and give a response that is finishing its last write a short grace before cutting the rest.
+      // (closeIdleConnections / closeAllConnections exist from Node 18.2; the unit allows Node >=18, so each is checked.)
+      if (typeof server.closeIdleConnections === "function") server.closeIdleConnections();
+      const cut = setTimeout(() => { if (typeof server.closeAllConnections === "function") server.closeAllConnections(); }, CLOSE_GRACE_MS);
+      server.close(() => { clearTimeout(cut); closeListingDeadline = null; releaseLock(); resolve(); });
+    }));
   };
   const server = http.createServer((req, res) => {
     handle(req, res).catch((e) => {
