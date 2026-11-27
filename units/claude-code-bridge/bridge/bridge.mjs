@@ -1039,6 +1039,12 @@ export const WINDOWS_PROC_SCRIPT = "Get-CimInstance Win32_Process | Select-Objec
  * timeout (3 to 4 s; runs 46020685013 and 46020700133). 250 ms is a grace for a response that is finishing its last write.
  */
 const CLOSE_GRACE_MS = 250;
+/**
+ * How long a stop or a close waits for a last look at the process list before it goes on with what is already known. Off Windows the list is `ps`
+ * (about 20 ms); on Windows it is a PowerShell start that took several seconds on GitHub's runner (run 46025210385: a whole close of 4891 ms), and a
+ * stop must not wait that long. The look is still taken, because it finds processes that left the tree; it just cannot hold the stop.
+ */
+const SNAPSHOT_CAP_MS = 1500;
 // Batch F diagnostic: removed before merge. X2A timing lines for what bridge.close() and the Stop route wait on.
 const X2A_T0 = Date.now();
 const x2a = (m) => { try {
@@ -3361,7 +3367,7 @@ export function createBridge(opts = {}) {
         const tr = c?.pid !== undefined ? tracks.get(c.pid) : undefined;
         x2a(`stopChild pid=${c?.pid} method=${platform === "win32" ? "taskkill /T /F" : "group SIGTERM then SIGKILL"} exitCode=${c?.exitCode}`);
         if (tr && platform !== "win32")
-            await Promise.race([snapshotTrack(tr), new Promise((r) => setTimeout(r, 1500).unref())]); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
+            await Promise.race([snapshotTrack(tr), new Promise((r) => setTimeout(r, SNAPSHOT_CAP_MS).unref())]); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
         const __t = Date.now(); // Batch F diagnostic: removed before merge
         return killChild(c, env, { ...opts.platformOpts, graceMs: opts.killGraceMs }).then(() => x2a(`stopChild pid=${c?.pid}: killChild settled after ${Date.now() - __t} ms`));
     };
@@ -3414,6 +3420,16 @@ export function createBridge(opts = {}) {
         }
     };
     async function snapshotTrack(tr) {
+        const __t = Date.now(); // Batch F diagnostic: removed before merge
+        x2a(`snapshotTrack(${tr.pid}) starts: listing command = ${platform === "win32" ? `${windowsPowerShell(env)} -NoProfile -NonInteractive -Command <WINDOWS_PROC_SCRIPT>` : "/bin/ps -A -o pid=,ppid=,lstart="}`);
+        try {
+            await snapshotTrack0(tr);
+        }
+        finally {
+            x2a(`snapshotTrack(${tr.pid}) ends after ${Date.now() - __t} ms`);
+        }
+    }
+    async function snapshotTrack0(tr) {
         const rows = await procList();
         if (!rows)
             return;
@@ -3477,12 +3493,17 @@ export function createBridge(opts = {}) {
     /** Everything recorded below this install's code turns, except the turns in `except`: a fresh look first, then SIGTERM, SIGKILL, a wait. Returns how many are still alive. */
     async function killAllTracked(except = new Set()) {
         x2a(`killAllTracked starts, tracks=${tracks.size}`);
-        for (const tr of [...tracks.values()])
-            if (!except.has(tr.pid)) {
-                const __t = Date.now();
-                await snapshotTrack(tr);
-                x2a(`killAllTracked: snapshotTrack(${tr.pid}) took ${Date.now() - __t} ms`);
-            }
+        for (const tr of [...tracks.values()]) {
+            if (except.has(tr.pid))
+                continue;
+            const __t = Date.now(); // Batch F diagnostic: removed before merge
+            let timer;
+            const capped = await Promise.race([snapshotTrack(tr).then(() => false, () => false), new Promise((r) => { timer = setTimeout(() => r(true), SNAPSHOT_CAP_MS); timer.unref(); })]);
+            clearTimeout(timer);
+            if (capped)
+                log(`close: process listing took over ${SNAPSHOT_CAP_MS} ms; killed the tracked tree only`);
+            x2a(`killAllTracked: snapshotTrack(${tr.pid}) took ${Date.now() - __t} ms, capped=${capped}`);
+        }
         const entries = [];
         for (const tr of tracks.values())
             if (!except.has(tr.pid))
