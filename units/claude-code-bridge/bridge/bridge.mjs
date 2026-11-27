@@ -2715,8 +2715,9 @@ export const CODEX_CHAT_FLAGS = [
  * The two names come from the hacker's listener log (logs/listener2.hk1.jsonl, REAL, Codex 0.167.2): both got those two header names.
  * The values are Codex's own defaults for a ChatGPT sign-in. The Codex config reference (learn.chatgpt.com/docs/config-file/config-reference,
  * read 2026-11-26) names both keys and lists no default, so the values are from the Codex source as remembered: UNPROVEN on real Codex 0.167.2.
- * The other URL keys in that reference (`model_providers.<id>.base_url`, `model_catalog_url`, OTEL endpoints, `mcp_servers.<id>.url`) are not set here:
+ * The other URL keys in that reference (`model_providers.<id>.base_url`, `model_catalog_url`, `mcp_servers.<id>.url`) are not set here:
  * no evidence shows them receiving the sign-in headers, the model provider is pinned to `openai`, and the person's MCP servers are switched off.
+ * The OTEL exporters are switched off by {@link CODEX_CHAT_OVERRIDES} (K-2): they would send a turn's events, and with `log_user_prompt` the prompt text, to a host the person's config names.
  */
 export const CODEX_CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/";
 export const CODEX_OPENAI_BASE_URL = "https://chatgpt.com/backend-api/codex";
@@ -2731,8 +2732,23 @@ export const CODEX_CHAT_OVERRIDES = [
     // The person's `notify` program (config key `notify`, an array of strings: hacker's repro, HK1-01, REAL; Codex config reference) runs at the end of a turn.
     // An empty array switches it off. The reference does not say that an empty array disables it: UNPROVEN on real Codex 0.167.2.
     "-c", "notify=[]",
+    // OpenTelemetry (K-2, HK2 question 1). The Codex config reference (https://learn.chatgpt.com/docs/config-file/config-reference, read 2026-11-27; developers.openai.com/codex/... redirects there) lists
+    // `otel.exporter` as `none | otlp-http | otlp-grpc`, `otel.trace_exporter` as `none | otlp-http | otlp-grpc`, and `otel.metrics_exporter` as `none | statsig | otlp-http | otlp-grpc`
+    // ("Set to `none` to disable metrics export."). The advanced guide says: "If `exporter = "none"` Codex records events but sends nothing." `otel.log_user_prompt` is a boolean.
+    // The `-c` spelling of these dotted keys is UNPROVEN on real Codex 0.167.2 (tested only on the stand-in, MOCK).
+    "-c", "otel.exporter=none",
+    "-c", "otel.trace_exporter=none",
+    "-c", "otel.metrics_exporter=none",
+    "-c", "otel.log_user_prompt=false",
 ];
-export const CODEX_CHAT_CONFIG = { web_search: "disabled", model_provider: "openai", chatgpt_base_url: CODEX_CHATGPT_BASE_URL, openai_base_url: CODEX_OPENAI_BASE_URL };
+export const CODEX_CHAT_CONFIG = {
+    web_search: "disabled",
+    model_provider: "openai",
+    chatgpt_base_url: CODEX_CHATGPT_BASE_URL,
+    openai_base_url: CODEX_OPENAI_BASE_URL,
+    // The same four OTEL values as the process overrides. Whether real Codex takes a nested `otel` table in a thread config is UNPROVEN.
+    otel: { exporter: "none", trace_exporter: "none", metrics_exporter: "none", log_user_prompt: false },
+};
 /** Appended to the page's system text. Sub-agents cannot be switched off in Codex 0.167.2, so the model is told to hand off instead. */
 export const CODEX_CHAT_SENTENCE = "Use only the gilb tools. Do not start other agents yourself: when the work needs another agent, use the hand-off tool this chat gives you.";
 /** Efforts a Codex turn may name. Claude's list is separate and does not include `ultra`. */

@@ -1819,3 +1819,61 @@ describe("HK2-01 endCodexTree guards", () => {
   });
 });
 
+describe("K-2 a person's OpenTelemetry export is off in a chat turn", () => {
+  // Spec: K-2 — the stand-in's [otel] shape and its "none" are guesses (fake-codex.mjs); the setting names and the value "none" are from the Codex config reference, read 2026-11-27.
+  const personOtel = (url) => `[otel]\nlog_user_prompt = true\nexporter = { otlp-http = { endpoint = "${url}/v1/logs", protocol = "json" } }\n`;
+  const listen = async (hits) => {
+    const listener = http.createServer((req, res) => { hits.push(req.url); res.end("{}"); });
+    await new Promise((r) => listener.listen(0, "127.0.0.1", r));
+    return { listener, url: `http://127.0.0.1:${listener.address().port}` };
+  };
+
+  it("a person-shaped config whose otel endpoint is a local listener sends it 0 requests during a turn, and the thread config carries the off values", async () => {
+    const hits = [];
+    const { listener, url } = await listen(hits);
+    try {
+      await startBridge({ env: { FAKE_CODEX_PHONE_HOME: "1" } });
+      fs.writeFileSync(path.join(dir, "codex-home", "config.toml"), personOtel(url));
+      const r = await turn(secret, { engine: "codex", prompt: "hi" });
+      expect(r.error).toBeUndefined();
+      expect(r.message.content).toBe("hi");
+      await delay(300);
+      expect(hits).toEqual([]);
+      const configs = rows().filter((row) => row.event === "config");
+      expect(configs.length).toBeGreaterThan(0);
+      for (const c of configs) expect(c).toMatchObject({ otelExporter: "none", otel_trace_exporter: "none", otel_metrics_exporter: "none", otel_log_user_prompt: "false" });
+      expect(rpcs("thread/start")[0].params.config.otel).toEqual({ exporter: "none", trace_exporter: "none", metrics_exporter: "none", log_user_prompt: false });
+    } finally {
+      await new Promise((r) => listener.close(r));
+    }
+  });
+
+  it("known answer: the same stand-in without the bridge's overrides does post to the listener", async () => {
+    const hits = [];
+    const { listener, url } = await listen(hits);
+    const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-codex-otel-"));
+    try {
+      fs.writeFileSync(path.join(cfgDir, "config.toml"), personOtel(url));
+      await new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [FAKE_CODEX, "app-server"], { env: { ...process.env, CODEX_HOME: cfgDir, FAKE_CODEX_PHONE_HOME: "1" }, stdio: ["pipe", "pipe", "ignore"] });
+        child.on("error", reject);
+        child.stdout.once("data", () => { child.kill(); resolve(); });
+        child.stdin.write(JSON.stringify({ id: 1, method: "account/read", params: {} }) + "\n");
+      });
+      expect(hits).toEqual(["/v1/logs"]);
+    } finally {
+      await new Promise((r) => listener.close(r));
+      fs.rmSync(cfgDir, { recursive: true, force: true });
+    }
+  });
+
+  it("the process start line carries the four otel overrides", async () => {
+    await startBridge();
+    await turn(secret, { engine: "codex", prompt: "hi" });
+    const argv = rows().find((row) => row.event === "boot").argv;
+    for (const v of ["otel.exporter=none", "otel.trace_exporter=none", "otel.metrics_exporter=none", "otel.log_user_prompt=false"]) {
+      expect(argv.join(" ")).toContain(`-c ${v}`);
+    }
+  });
+});
+

@@ -19,7 +19,7 @@
  * FAKE_CODEX_WIDE_REPEATS plus FAKE_CODEX_CHUNK (a long answer outside ASCII, written in small stdout pieces),
  * FAKE_CODEX_DOUBLE_GILB (two rows named gilb), FAKE_CODEX_STATUS (omit-tools, tools-array, no-name),
  * FAKE_CODEX_MODEL_PROVIDER (thread answer modelProvider other than openai),
- * FAKE_CODEX_BIG_LINE (one stdout line longer than 16 MiB), a notify program from the config file or `-c notify=[…]` (run at the end of a turn), FAKE_CODEX_PHONE_HOME (on account/read, GET the two base URLs it ended up with, loopback only).
+ * FAKE_CODEX_BIG_LINE (one stdout line longer than 16 MiB), a notify program from the config file or `-c notify=[…]` (run at the end of a turn), FAKE_CODEX_PHONE_HOME (on account/read, GET the two base URLs it ended up with, and POST to a person's otel exporter endpoint if the exporter is not none; loopback only).
  * Prompt words, also guesses: SILENT (nothing after turn/start), TICK (a status line on a timer, no item),
  * EARLYSHELL (a commandExecution item before the turn/start answer), COMPLETEDSHELL (that item only as
  * item/completed), UPDATEDSHELL (only as item/updated), NOANSWER (turn/completed with no agentMessage),
@@ -55,6 +55,13 @@ function effectiveConfig() {
     for (const m of text.matchAll(/^\s*(chatgpt_base_url|openai_base_url)\s*=\s*"([^"]*)"/gm)) cfg[m[1]] = m[2];
     const n = /^\s*notify\s*=\s*(\[.*\])\s*$/m.exec(text);
     if (n) cfg.notify = JSON.parse(n[1]);
+    // Guess: the [otel] table as a person writes it, `exporter = { otlp-http = { endpoint = "…" } }` or `exporter = "none"`. Only its endpoint and its "none" are read.
+    const o = /^\s*exporter\s*=\s*(.*)$/m.exec(text);
+    if (o) {
+      cfg.otelExporter = /^"none"/.test(o[1].trim()) ? "none" : "otlp";
+      const ep = /endpoint\s*=\s*"([^"]*)"/.exec(o[1]);
+      if (ep) cfg.otelEndpoint = ep[1];
+    }
   } catch { /* no config file */ }
   for (let i = 0; i < argv.length - 1; i++) {
     if (argv[i] !== "-c") continue;
@@ -62,6 +69,11 @@ function effectiveConfig() {
     if (m) cfg[m[1]] = m[2].replace(/^"(.*)"$/, "$1");
     const n = /^notify=(\[.*\])$/.exec(argv[i + 1]);
     if (n) cfg.notify = JSON.parse(n[1]);
+    // Guess: `-c otel.exporter=none` replaces the person's exporter, as `-c` replaces a key. Real Codex was not measured to do this.
+    const ox = /^otel\.exporter=(.*)$/.exec(argv[i + 1]);
+    if (ox) { cfg.otelExporter = ox[1].replace(/^"(.*)"$/, "$1") === "none" ? "none" : "otlp"; if (cfg.otelExporter === "none") delete cfg.otelEndpoint; }
+    const ot = /^otel\.(trace_exporter|metrics_exporter|log_user_prompt)=(.*)$/.exec(argv[i + 1]);
+    if (ot) cfg[`otel_${ot[1]}`] = ot[2];
   }
   return cfg;
 }
@@ -77,6 +89,10 @@ function runNotify(payload) {
 /** FAKE_CODEX_PHONE_HOME=1: like real Codex at startup (hacker's log), GET both base URLs with sign-in header names. Only a loopback address is called, never a real host. */
 async function phoneHome() {
   if (process.env.FAKE_CODEX_PHONE_HOME !== "1") return;
+  // Guess: Codex posts a log event to the otel endpoint it ended up with (loopback only here). Header names are not logged.
+  if (config.otelExporter === "otlp" && config.otelEndpoint && /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(config.otelEndpoint)) {
+    try { await fetch(config.otelEndpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resourceLogs: [] }) }); } catch { /* the listener is the test's */ }
+  }
   const calls = [[config.chatgpt_base_url, "wham/accounts/check"], [config.openai_base_url, "models"]];
   for (const [base, tail] of calls) {
     if (!base || !/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(base)) continue;
