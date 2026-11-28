@@ -227,6 +227,21 @@ process.stdin.on("end", async () => {
       log({ event: "askjson", tool: ask.tool_name, decision: JSON.parse(r.result.content[0].text) });
     }
   }
+  // REQSET:<json array of request_setting arguments> (0.4.1): act as Claude Code asking the bridge's request_setting tool for each, in order; log the
+  // tool list the server offered and each reply. It can only ask: like the real tool, the reply carries no nonce, hash or approval.
+  const reqSet = /REQSET:(.*)/.exec(prompt);
+  if (reqSet && url) {
+    const rpc = async (method, params, id) =>
+      (await fetch(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) })).json();
+    await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "fake", version: "0" } }, 1);
+    const list = await rpc("tools/list", {}, 2);
+    log({ event: "reqsetTools", tools: list.result.tools });
+    let n = 10;
+    for (const args of JSON.parse(reqSet[1])) {
+      const r = await rpc("tools/call", { name: "request_setting", arguments: args }, n++);
+      log({ event: "reqset", args, reply: r.result ?? r.error });
+    }
+  }
   if (prompt.includes("SPAWNCHILD")) {
     // Like the real CLI, which starts helpers (its MCP children): one grandchild that sleeps, so a test can see whether Stop took it too.
     const kid = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
