@@ -281,7 +281,7 @@ export type RequestResult =
   | { status: "refused"; reason: string; allowed: readonly string[] };
 /** `latch`: the caller must keep setting grants off until the bridge restarts (the secret file was found changed). */
 export type GrantResult = { ok: true; grant: SettingGrant } | { ok: false; status: number; error: string; latch?: true };
-export type RevokeResult = { ok: true } | { ok: false; status: number; error: string };
+export type RevokeResult = { ok: true } | { ok: false; status: number; error: string; latch?: true };
 
 export interface GrantBookOptions {
   /** The bridge's state folder. The store is `<stateDir>/projects/<projectId>/granted-settings.json`. */
@@ -292,6 +292,48 @@ export interface GrantBookOptions {
   log?: (s: string) => void;
   /** TEST-ONLY: the temp file name of an atomic write (default: the file name plus 16 random bytes in hex). */
   tempName?: (file: string) => string;
+}
+
+/**
+ * The temp names this file writes (`<file>.<32 hex>.tmp`). A kill between fsync and rename leaves one behind, and the secret's copy holds the secret,
+ * so load() removes exactly these names, regular files only (never a link, never a folder, never another name).
+ */
+const TEMP_LEFTOVER_RES: readonly RegExp[] = [/^\.grant-secret\.[0-9a-f]{32}\.tmp$/, /^granted-settings\.json\.[0-9a-f]{32}\.tmp$/];
+/** A store folder that is no longer the one the bridge loaded or made (a link, another folder, not a folder): the write stops and grants latch off. */
+class FolderSwapped extends Error {}
+
+/** Why plainFileCheck refused a file. "missing" is the only one that is not a sign of tampering. */
+export type PlainFileReason = "missing" | "symlink" | "not-regular" | "hard-link" | "mode" | "too-large" | "unreadable";
+export type PlainFileResult = { ok: true; bytes?: Buffer } | { ok: false; reason: PlainFileReason };
+/**
+ * THE check for a file the bridge keeps and trusts (the grant secret, the grant store, and the ship key): opened without following a link (and an lstat first,
+ * because Windows has no O_NOFOLLOW), without waiting (a FIFO must not stop the bridge), then it must be a regular file with ONE name (a hard link: the same bytes
+ * could be changed through the other name), at most `maxBytes`, and with `mode600` exactly mode 0600 (skipped on Windows, which has no POSIX mode). Asked afresh
+ * at every use by the callers that need it; it keeps no result. With `readBytes` the bytes come back; without it the file's contents are never read.
+ */
+export function plainFileCheck(file: string, o: { maxBytes?: number; readBytes?: boolean; mode600?: boolean; platform?: string } = {}): PlainFileResult {
+  const platform = o.platform ?? process.platform;
+  let fd = -1;
+  try {
+    let l: fs.Stats;
+    try { l = fs.lstatSync(file); } catch (e) { return { ok: false, reason: (e as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable" }; }
+    if (l.isSymbolicLink()) return { ok: false, reason: "symlink" };
+    // O_NONBLOCK: opening a FIFO must not wait for a writer (that would stop the whole bridge); anything that is not a regular file is refused just below.
+    fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) return { ok: false, reason: "not-regular" };
+    if (platform !== "win32" && st.nlink > 1) return { ok: false, reason: "hard-link" };
+    if (o.mode600 && platform !== "win32" && (st.mode & 0o777) !== 0o600) return { ok: false, reason: "mode" };
+    if (o.maxBytes !== undefined && st.size > o.maxBytes) return { ok: false, reason: "too-large" };
+    if (!o.readBytes) return { ok: true };
+    const buf = Buffer.alloc(st.size);
+    const n = fs.readSync(fd, buf, 0, st.size, 0);
+    return { ok: true, bytes: buf.subarray(0, n) };
+  } catch (e) {
+    return { ok: false, reason: (e as NodeJS.ErrnoException).code === "ELOOP" ? "symlink" : "unreadable" };
+  } finally {
+    if (fd >= 0) { try { fs.closeSync(fd); } catch { /* closed anyway */ } }
+  }
 }
 
 /** The folder that holds every project's grants. A code turn may neither read nor write it (denyWrite and denyRead). */
@@ -321,6 +363,9 @@ export function createGrantBook(o: GrantBookOptions) {
   // The copy in memory: the secret (null until one exists) and each project's entries.
   let keyMem: Buffer | null = null;
   let grantsMem = new Map<string, unknown[]>();
+  // The store folder and each project's folder as the bridge saw them (device and inode), set at load() or when this book made the folder.
+  // A write is refused when the folder is no longer that plain directory (Agent.Hacker round 7, T1: a link swapped in after start).
+  const dirIds = new Map<string, { dev: number; ino: number }>();
 
   /** The install's secret from disk, or null if there is none yet or the file is not 32 bytes (then no entry can verify). Used by load() only. */
   function readKey(): Buffer | null {
@@ -335,28 +380,36 @@ export function createGrantBook(o: GrantBookOptions) {
     log(`setting grants: ${file} ${why}, so it is not used.`);
   };
   /**
-   * The bytes of one file the bridge keeps, or null. Opened without following a link, and refused when it is not a plain file, is larger than `max`, or has
-   * more than one name (a hard link: the same bytes could be changed through the other name, as access.json already refuses). A missing file is quietly null.
+   * The bytes of one file the bridge keeps, or null. The checks are plainFileCheck's (not a link, a plain file, one name, not too large); a missing file is quietly null.
    */
   function readFileSafe(file: string, max: number): Buffer | null {
-    let fd = -1;
-    try {
-      // O_NONBLOCK: opening a FIFO must not wait for a writer (that would stop the whole bridge); anything that is not a regular file is refused just below.
-      fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
-      const st = fs.fstatSync(fd);
-      if (!st.isFile()) return null;
-      if (process.platform !== "win32" && st.nlink > 1) { warnOnce(file, "has more than one name (a hard link)"); return null; }
-      if (st.size > max) { warnOnce(file, `is larger than ${max} bytes`); return null; }
-      const buf = Buffer.alloc(st.size);
-      const n = fs.readSync(fd, buf, 0, st.size, 0);
-      return buf.subarray(0, n);
-    } catch {
-      return null;
-    } finally {
-      if (fd >= 0) { try { fs.closeSync(fd); } catch { /* closed anyway */ } }
-    }
+    const r = plainFileCheck(file, { maxBytes: max, readBytes: true });
+    if (r.ok) return r.bytes ?? null;
+    if (r.reason === "hard-link") warnOnce(file, "has more than one name (a hard link)");
+    else if (r.reason === "too-large") warnOnce(file, `is larger than ${max} bytes`);
+    return null;
   }
   const tempName = o.tempName ?? ((f: string) => `${f}.${crypto.randomBytes(16).toString("hex")}.tmp`);
+  /**
+   * Called before every write into a store folder. The folder must be a plain directory (lstat, so a link is not followed) with the device and inode
+   * recorded at load or when this book made it; the first write to a folder not seen before records it (it is checked to be a plain directory then).
+   * A missing folder is made here (0700) and recorded. Anything else throws FolderSwapped: nothing is written, and the caller latches grants off.
+   */
+  function guardDir(dir: string): void {
+    // A project folder is reached THROUGH the store folder, so a link in place of the store folder must fail first (lstat of the child would follow it).
+    const root = storeFolder(o.stateDir);
+    if (dir !== root) guardDir(root);
+    let st: fs.Stats | null = null;
+    try { st = fs.lstatSync(dir); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
+    if (!st) {
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      st = fs.lstatSync(dir); // a link that appeared between the two calls fails the check below
+    }
+    if (!st.isDirectory()) throw new FolderSwapped(`${dir} is not a plain folder`);
+    const known = dirIds.get(dir);
+    if (known && (known.dev !== st.dev || known.ino !== st.ino)) throw new FolderSwapped(`${dir} is not the folder the bridge started with`);
+    if (!known) dirIds.set(dir, { dev: st.dev, ino: st.ino });
+  }
   /** Refuses a destination that exists and is not a plain file (a link, a folder, a device): a rename would replace it, and a link may be where the agent wants the bytes to go. */
   function destinationOk(f: string): void {
     let st: fs.Stats;
@@ -369,7 +422,7 @@ export function createGrantBook(o: GrantBookOptions) {
    * link or not a plain file is refused before and again just before the rename. A temp file this call made is removed if anything fails.
    */
   function writeFileAtomic(f: string, data: string | Buffer): void {
-    fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 });
+    guardDir(path.dirname(f));
     destinationOk(f);
     const tmp = tempName(f);
     const fd = fs.openSync(tmp, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
@@ -406,6 +459,20 @@ export function createGrantBook(o: GrantBookOptions) {
       if (fd >= 0) { try { fs.closeSync(fd); } catch { /* closed anyway */ } }
     }
   }
+  /** Removes the files in `dir` whose name matches `re` and that are regular files by lstat (a link or a folder of that name is left alone and never followed). */
+  function sweepTemps(dir: string, re: RegExp): void {
+    let names: string[] = [];
+    try { names = fs.readdirSync(dir); } catch { return; }
+    for (const n of names) {
+      if (!re.test(n)) continue;
+      const f = path.join(dir, n);
+      try {
+        if (!fs.lstatSync(f).isFile()) continue;
+        fs.unlinkSync(f);
+        log(`setting grants: removed ${f}, a temp file left by a stopped write.`);
+      } catch { /* not removable now: it is never read, so it stays harmless */ }
+    }
+  }
   /** Drops a request that has waited too long. */
   function sweep(): void {
     const t = now().getTime();
@@ -438,17 +505,24 @@ export function createGrantBook(o: GrantBookOptions) {
   function writeAll(projectId: string, grants: unknown[]): void {
     const f = fileFor(projectId);
     if (!f) throw new Error("bad project id");
-    fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 });
     writeFileAtomic(f, JSON.stringify({ version: 1, grants }, null, 2));
   }
 
   return {
     /** Reads the secret and every project's file from disk into memory (the only disk read of the store). Call once at start, after the start checks. */
     load(): void {
-      keyMem = readKey();
       grantsMem = new Map();
+      dirIds.clear();
+      // The store folder must itself be a plain directory (a link is not followed, as with each project folder); its device and inode are kept for every later write.
+      const root = storeFolder(o.stateDir);
+      let rootStat: fs.Stats | null = null;
+      try { rootStat = fs.lstatSync(root); } catch { /* no store yet */ }
+      if (rootStat && !rootStat.isDirectory()) { warnOnce(root, "is not a plain folder"); keyMem = null; return; }
+      if (rootStat) dirIds.set(root, { dev: rootStat.dev, ino: rootStat.ino });
+      sweepTemps(root, TEMP_LEFTOVER_RES[0]!);
+      keyMem = readKey();
       let dirs: string[] = [];
-      try { dirs = fs.readdirSync(storeFolder(o.stateDir)); } catch { /* no store yet */ }
+      try { dirs = fs.readdirSync(root); } catch { /* no store yet */ }
       for (const d of dirs) {
         if (!PROJECT_ID_RE.test(d)) continue;
         // A project's folder is opened without following a link: it must itself be a plain directory, else that project is skipped.
@@ -456,6 +530,9 @@ export function createGrantBook(o: GrantBookOptions) {
         let plain = false;
         try { plain = fs.lstatSync(dp).isDirectory(); } catch { /* gone */ }
         if (!plain) { warnOnce(dp, "is not a plain folder"); continue; }
+        const ds = fs.lstatSync(dp);
+        dirIds.set(dp, { dev: ds.dev, ino: ds.ino });
+        sweepTemps(dp, TEMP_LEFTOVER_RES[1]!);
         grantsMem.set(d, readDisk(d));
       }
     },
@@ -533,7 +610,7 @@ export function createGrantBook(o: GrantBookOptions) {
         if (st === "missing") {
           try { writeFileAtomic(secretFile, keyMem); } catch (e) {
             log(`setting grant not saved: ${(e as Error).message}`);
-            return { ok: false, status: 500, error: "The grant could not be saved on this computer." };
+            return { ok: false, status: 500, error: "The grant could not be saved on this computer.", ...(e instanceof FolderSwapped ? { latch: true as const } : {}) };
           }
         }
       }
@@ -551,7 +628,8 @@ export function createGrantBook(o: GrantBookOptions) {
         keyMem = oldKey;
         if (oldList) grantsMem.set(p.project.id, oldList); else grantsMem.delete(p.project.id);
         log(`setting grant not saved: ${(e as Error).message}`);
-        return { ok: false, status: 500, error: "The grant could not be saved on this computer." };
+        // A folder swapped after start is a sign of tampering, like a changed secret: grants stay off until the bridge restarts.
+        return { ok: false, status: 500, error: "The grant could not be saved on this computer.", ...(e instanceof FolderSwapped ? { latch: true as const } : {}) };
       }
       pending.delete(p.project.id); // the nonce is used up with the request
       return { ok: true, grant: g };
@@ -578,7 +656,7 @@ export function createGrantBook(o: GrantBookOptions) {
         try { writeAll(d, keep); } catch (e) {
           grantsMem.set(d, all);
           log(`grant not removed: ${(e as Error).message}`);
-          return { ok: false, status: 500, error: "Could not save the change; nothing was changed." };
+          return { ok: false, status: 500, error: "Could not save the change; nothing was changed.", ...(e instanceof FolderSwapped ? { latch: true as const } : {}) };
         }
         return { ok: true };
       }

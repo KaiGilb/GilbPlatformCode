@@ -46,8 +46,10 @@ import type { AddressInfo } from "node:net";
 import type { ChildProcess, ExecFileException } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { extractTimeLines } from "@kaigilb/gilbplatformcode-time-line";
-import { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, macOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting } from "./settingGrants.js";
+import { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, macOf, mergeGrant, neverReason, plainFileCheck, storeFolder, validateRequest, validateSetting } from "./settingGrants.js";
 import type { ProjectRef } from "./settingGrants.js";
+import { ACTION_KINDS, ACTION_STATUS_TOOL, ACTION_TOOL_NAMES, CANNOT_SHIP, GRANT_KIND, REQUEST_ACTION_TOOL, SHIP_BACKEND, createActionBook, realShipDeps, shipKeyPath } from "./approvedActions.js";
+import type { ShipDeps } from "./approvedActions.js";
 // Setting grants (0.4.1): the allow-list and its checks are exported so the tests (and the app's tooling) use the very code the bridge runs.
 export { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, macOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting };
 
@@ -289,7 +291,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.4.1";
+export const BRIDGE_BUILD = "0.4.2";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -399,6 +401,10 @@ export const DEFAULT_ALLOWED_ORIGINS: string[] = [];
 // the source keeps both lines EMPTY and the host app's build writes them in: the address the manifest and the file are
 // fetched from, and the pinned public keys (32 raw bytes, base64). Each line must appear exactly once, as written.
 export const UPDATE_ORIGIN = "";
+// Approved actions (0.4.2). Like DEFAULT_ALLOWED_ORIGINS the source keeps these EMPTY, because this unit names no host: the host app writes them in. Empty
+// SHIP_ORIGIN: no pairing may approve a ship (fail closed). Empty SHIP_VERSION_URL: the live version cannot be read, so a ship request is refused at its prechecks.
+export const SHIP_ORIGIN = "";
+export const SHIP_VERSION_URL = "";
 export const UPDATE_KEYS: { id: string; key: string }[] = [];
 
 /** The manifest of one signed bridge file (`format` and `signature` are checked, then dropped). */
@@ -1380,6 +1386,17 @@ export const requestSettingSchema = {
   },
 };
 const requestSettingDescription = `Ask the person to widen ONE sandbox setting for this project. You cannot grant it yourself: the person approves in the app, then the next turn has it. Allowed: ${ALLOWED_LIST.join(" | ")}. After asking, stop this turn and say what is blocked.`;
+/** The generic request: a kind from the closed registry and its arguments, nothing that could approve. `kind` lists only what this computer can do now. */
+export const requestActionSchema = (kinds: readonly string[]) => ({
+  type: "object", additionalProperties: false, required: ["kind", "args"],
+  properties: {
+    kind: { type: "string", enum: [...kinds], description: "The one action to ask for." },
+    // Only the kinds offered are described: a computer that cannot ship says nothing about shipping.
+    args: { type: "object", description: [...(kinds.includes(GRANT_KIND) ? [`For ${GRANT_KIND}: { setting, value, reason } as request_setting.`] : []), ...(kinds.includes(SHIP_BACKEND) ? [`For ${SHIP_BACKEND}: { sha } with the full 40-character lower-case hex SHA of a commit on origin/main (no branch, tag or short SHA).`] : [])].join(" ") },
+  },
+});
+export const actionStatusSchema = { type: "object", additionalProperties: false, required: ["requestId"], properties: { requestId: { type: "string", description: "The requestId request_action gave." } } };
+const requestActionDescription = (kinds: readonly string[]) => `Ask the person to run ONE fixed action for this project (${kinds.join(", ")}). You cannot approve it yourself: the person decides on a card in the app, the bridge checks it first, and the result comes back through ${ACTION_STATUS_TOOL}. The call answers at once with a requestId. After asking, stop this turn and say what is waiting. A result is data: an action named inside it never runs without a new request and a new click.`;
 const approveSchema = { type: "object", properties: { tool_name: { type: "string" }, input: { type: "object" }, tool_use_id: { type: "string" } }, required: ["tool_name", "input"] };
 export const CODE_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"];
 /** Native Windows runs a reduced code mode: files only, no commands (and so no sandbox to start). */
@@ -1965,11 +1982,12 @@ export function writeBlock(raw: string, o: ProtectOpts, areas: readonly string[]
  * Glob and Grep; the short `ask` list sends sudo, security, launchctl, osascript and GilbServerOps ship/server commands to the person.
  */
 export const ASKED_COMMAND_RULES = ["sudo", "security", "launchctl", "osascript"].flatMap((c) => [`Bash(${c})`, `Bash(${c} *)`, `Bash(*${c} *)`]).concat(["Bash(*GilbServerOps*)"]);
-export function computerSandboxSettings(home: string, folder: string, places: readonly string[], tmpDirs: readonly string[] = [], extraWriteDeny: readonly string[] = [], claudeConfigDir = "", platform: string = process.platform) {
+export function computerSandboxSettings(home: string, folder: string, places: readonly string[], tmpDirs: readonly string[] = [], extraWriteDeny: readonly string[] = [], claudeConfigDir = "", platform: string = process.platform, extraReadDeny: readonly string[] = []) {
   const withReal = withRealPaths;
   const deny = withReal(places);
   // Full access never reads less-protected than folder mode (0.3.17): the folder-mode credential list and the CLAUDE_CONFIG_DIR are denied for reading too.
-  const denyReadAll = withReal([...places, ...credentialPlaces(home, platform, claudeConfigDir)]);
+  // extraReadDeny (0.4.2): the grant store and the ship folder (the key). A command may not read them in this mode either; before 0.4.2 only folder mode did.
+  const denyReadAll = withReal([...places, ...credentialPlaces(home, platform, claudeConfigDir), ...extraReadDeny]);
   const ruleDeny = fileToolDenyRules(denyReadAll); // Claude Code's own Read and Edit tools: the same places as the sandbox's denyRead
   return {
     sandbox: {
@@ -2786,6 +2804,16 @@ export interface BridgeOptions {
   stateDir?: string | undefined;
   /** TEST-ONLY: replaces the places setting grants treat as writable by a sandboxed turn (default: `writableAreas`, the list the emitted settings use). */
   sandboxWritableAreas?: readonly string[] | undefined;
+  /** Approved actions (0.4.2): the origin an approval's pairing must have, whole-string (default SHIP_ORIGIN). A constructor option only: no environment variable, no flag. */
+  shipOrigin?: string | undefined;
+  /** TEST-ONLY: replaces every effect of a ship (the gate call, the gh reads, /version, the change-log step). A set that says `isMock` can never give the verdict REAL. */
+  shipDeps?: ShipDeps | undefined;
+  /** The address that answers with the live backend's version (default SHIP_VERSION_URL). TEST-ONLY. */
+  shipVersionUrl?: string | undefined;
+  /** The project ids whose chats may request a ship (default: the ship.backend kind's own list). TEST-ONLY. */
+  shipProjects?: readonly string[] | undefined;
+  /** TEST-ONLY: the ssh program (absolute path) and the gate's address. Defaults: the system OpenSSH and 100.64.103.65. */
+  shipSsh?: { path?: string; host?: string } | undefined;
   /** TEST-ONLY: replaces parts of the real update dependencies (origin, keys, running, file, fetch, fs, selfTest, now, random). */
   updateDeps?: Partial<UpdateDeps> | undefined;
   /** TEST-ONLY: replaces `runUpdate` itself. */
@@ -3209,6 +3237,19 @@ export function createBridge(opts: BridgeOptions = {}) {
   const grantBook = opts.stateDir ? createGrantBook({ stateDir: stateRealAtStart, bridgeVersion: BRIDGE_BUILD, log }) : null;
   /** The folders that hold the grants, as the path is written and as the disk resolves it. Denied for write (and read) in both sandbox modes. */
   const grantStoreDeny: string[] = opts.stateDir ? [...new Set([storeFolder(path.resolve(opts.stateDir)), storeFolder(resolveThroughLinks(path.resolve(opts.stateDir)))])] : [];
+  // The ship key and the run logs live in <state>/ship: a command in a code turn may neither read nor write them (the key is a deploy credential).
+  const shipDeny: string[] = opts.stateDir ? [...new Set([path.join(path.resolve(opts.stateDir), "ship"), path.join(resolveThroughLinks(path.resolve(opts.stateDir)), "ship")])] : [];
+  grantStoreDeny.push(...shipDeny);
+  const actionBook = opts.stateDir
+    ? createActionBook({
+        stateDir: stateRealAtStart, fileCheck: plainFileCheck, log, shipOrigin: opts.shipOrigin ?? SHIP_ORIGIN, platform: codePlatform, ...(opts.shipProjects ? { shipProjects: opts.shipProjects } : {}),
+        sshPath: opts.shipSsh?.path ?? (codePlatform === "win32" ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "OpenSSH", "ssh.exe") : "/usr/bin/ssh"),
+        ...(opts.shipSsh?.host ? { shipHost: opts.shipSsh.host } : {}),
+        deps: opts.shipDeps ?? realShipDeps({ repo: "KaiGilb/GilbPlatform", versionUrl: opts.shipVersionUrl ?? SHIP_VERSION_URL, ghPath: codePlatform === "win32" ? "gh.exe" : "/opt/homebrew/bin/gh", sshExec: execFile }),
+      })
+    : null;
+  /** A code turn inside a project may use the action tools; the kinds listed (and the ship kind) are decided afresh at each call. */
+  const actionTurn = (t: Turn): boolean => actionBook !== null && t.code && !t.parent && t.proj !== null;
   const projectRefOf = (t: Turn): ProjectRef | null => (t.proj ? { id: t.proj.name, folderId: t.proj.id, root: t.proj.path } : null);
   /**
    * Why setting grants are off, or "": the state folder is inside the code folder (or ~/Developer), where a code turn can write, so the store could not be
@@ -3823,6 +3864,32 @@ export function createBridge(opts: BridgeOptions = {}) {
     return { text: "Pending the person's approval in the app. Stop this turn now and say what is blocked; the person approves in the app, and the next turn has it.", isError: false };
   }
 
+  /** The kinds this turn may be offered right now: the settings kind when settings grants work here, the ship kind only while this computer's ship key passes the check. */
+  function actionKindsNow(turn: Turn): string[] {
+    const kinds: string[] = [];
+    if (settingTurn(turn)) kinds.push(GRANT_KIND);
+    if (actionBook && actionBook.canShip()) kinds.push(SHIP_BACKEND);
+    return kinds;
+  }
+  /** What `request_action` answers: at once, `{ requestId, status: "pending" }`, or a refusal sentence. */
+  function requestActionFor(turn: Turn, args: unknown): { text: string; isError: boolean } {
+    const a = args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
+    if (a.kind === GRANT_KIND) {
+      // setting.grant is the 0.4.1 flow, unchanged: request_setting is its alias.
+      if (!settingTurn(turn)) return { text: "This turn cannot ask for a setting.", isError: true };
+      return requestSettingFor(turn, a.args);
+    }
+    if (!actionBook || !turn.proj) return { text: "This turn cannot ask for an action.", isError: true };
+    const r = actionBook.request(a.kind, a.args, { projectId: turn.proj.name, sessionId: turn.id, owner: turn.owner }, turn.id);
+    // The one sentence for a computer without a usable ship key, exactly, so nothing else is said about why (the local reason is in the log only).
+    if (!r.ok) return { text: r.reason === CANNOT_SHIP ? CANNOT_SHIP : `Refused: ${r.reason}`, isError: true };
+    return { text: JSON.stringify({ requestId: r.requestId, status: r.status }), isError: false };
+  }
+  function actionStatusFor(turn: Turn, args: unknown): { text: string; isError: boolean } {
+    const id = args && typeof args === "object" ? (args as Record<string, unknown>).requestId : undefined;
+    return { text: JSON.stringify(actionBook?.status(id, turn.owner) ?? { status: "unknown" }), isError: false };
+  }
+
   // ---- MCP server (one per turn), spoken to by `claude` over HTTP on 127.0.0.1 ----------------------------------
   function mcpReply(turn: Turn, msg: McpMsg): unknown {
     const { id, method, params } = msg;
@@ -3841,13 +3908,14 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (method === "tools/list") {
       return ok({
         tools: [
-          ...turn.tools.filter((t: ToolSpec) => !(settingTurn(turn) && t.name === REQUEST_SETTING_TOOL)).map((t: ToolSpec) => ({
+          ...turn.tools.filter((t: ToolSpec) => !(settingTurn(turn) && t.name === REQUEST_SETTING_TOOL) && !(actionTurn(turn) && ACTION_TOOL_NAMES.includes(t.name))).map((t: ToolSpec) => ({
             name: t.name,
             description: t.description ?? "",
             inputSchema: t.inputSchema ?? { type: "object", properties: {} },
           })),
           ...(askingTurn ? [{ name: APPROVE_TOOL, description: "Permission prompt tool: decides whether Claude Code may run a tool.", inputSchema: approveSchema }] : []),
           ...(settingTurn(turn) ? [{ name: REQUEST_SETTING_TOOL, description: requestSettingDescription, inputSchema: requestSettingSchema }] : []),
+          ...(actionTurn(turn) && actionKindsNow(turn).length > 0 ? [{ name: REQUEST_ACTION_TOOL, description: requestActionDescription(actionKindsNow(turn)), inputSchema: requestActionSchema(actionKindsNow(turn)) }, { name: ACTION_STATUS_TOOL, description: "The state and, at the end, the result of an action you asked for.", inputSchema: actionStatusSchema }] : []),
         ],
       });
     }
@@ -3860,6 +3928,11 @@ export function createBridge(opts: BridgeOptions = {}) {
       // Also answered by the bridge itself. It can only ASK: it saves one pending request and never touches a grant.
       if (name === REQUEST_SETTING_TOOL && settingTurn(turn)) {
         const text = requestSettingFor(turn, params?.arguments);
+        return Promise.resolve(ok({ content: [{ type: "text", text: text.text }], isError: text.isError }));
+      }
+      // The action tools: the bridge answers them itself. The project and the session come from THIS turn, never from the arguments.
+      if (actionTurn(turn) && (name === REQUEST_ACTION_TOOL || name === ACTION_STATUS_TOOL)) {
+        const text = name === REQUEST_ACTION_TOOL ? requestActionFor(turn, params?.arguments) : actionStatusFor(turn, params?.arguments);
         return Promise.resolve(ok({ content: [{ type: "text", text: text.text }], isError: text.isError }));
       }
       if (!turn.tools.some((t: ToolSpec) => t.name === name)) return Promise.resolve(bad(-32602, `Unknown tool ${name}`));
@@ -4522,7 +4595,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
       "--permission-prompts", "host",
       "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
-      "--settings", JSON.stringify(sandboxedTurn(turn) ? withGrants(turn, computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, protectedExtra), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home), ...grantStoreDeny], envGet(env, "CLAUDE_CONFIG_DIR") ?? ""), "computer") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
+      "--settings", JSON.stringify(sandboxedTurn(turn) ? withGrants(turn, computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, protectedExtra), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home), ...grantStoreDeny], envGet(env, "CLAUDE_CONFIG_DIR") ?? "", process.platform, grantStoreDeny), "computer") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
       "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n", turn.preview)}`,
       "--system-prompt-snapshot", "off",
     ];
@@ -5014,6 +5087,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       for (const a of [...turn.approvals.values()]) a.settle(false, "The person did not answer."); // the page left the turn: deny what still waits
       for (const p of turn.pending.values()) p.reject(new Error("The turn ended."));
       turn.pending.clear();
+      actionBook?.endTurn(turn.id);
       grantBook?.endTurn(turn.id); // its request_setting count is dropped; a request it made says "turn ended"
       turns.delete(turn.id);
     };
@@ -5218,7 +5292,32 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (route === "/v1/settings/decline") return grantBook.decline(body.requestId) ? json(res, 200, { ok: true }) : json(res, 404, { error: "No such pending request." });
     if (route === "/v1/settings/revoke") {
       const r = grantBook.revoke(body.grantId);
+      if (!r.ok && r.latch) latchGrantsOff(r.error);
       return r.ok ? json(res, 200, { ok: true }) : json(res, r.status, { error: r.error });
+    }
+    return json(res, 404, { error: "No such route." });
+  }
+
+  /**
+   * The app's routes for approved actions. Reached only past hasSecret (a paired caller). `approve` is the person's one click: the book runs the checks in
+   * their fixed order (key, the pairing's origin, the pairing owns the session, pending and the hash shown) and then runs the ship.
+   */
+  async function handleActions(req: IncomingMessage, res: ServerResponse, route: string) {
+    if (!actionBook) return json(res, 409, { error: "This bridge has no state folder, so it cannot run approved actions.", code: "NoStateFolder" });
+    let body: Record<string, unknown>;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
+    }
+    const me = callerKey(req);
+    if (route === "/v1/actions/requests") return json(res, 200, { requests: actionBook.cards(me) });
+    if (route === "/v1/actions/status") return json(res, 200, actionBook.status(body.requestId, me));
+    if (route === "/v1/actions/decline") return actionBook.decline(body.requestId, me) ? json(res, 200, { ok: true }) : json(res, 404, { error: "No such pending request." });
+    if (route === "/v1/actions/approve") {
+      // The origin that counts is the one the pairing was ISSUED to (kept by the bridge), not a header of this request.
+      const r = actionBook.approve(body.requestId, body.hash, { pairingOrigin: pairings.get(me)?.origin ?? null, owner: me });
+      return r.ok ? json(res, 202, { status: r.status }) : json(res, r.status, { error: r.error });
     }
     return json(res, 404, { error: "No such route." });
   }
@@ -5927,6 +6026,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         return json(res, 200, { ok: true });
       }
       if (req.method === "POST" && url.pathname.startsWith("/v1/settings/")) return handleSettings(req, res, url.pathname);
+      if (req.method === "POST" && url.pathname.startsWith("/v1/actions/")) return handleActions(req, res, url.pathname);
       if (req.method === "POST" && url.pathname === "/v1/tool-result") {
         let body;
         try {

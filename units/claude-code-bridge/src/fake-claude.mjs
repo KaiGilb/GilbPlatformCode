@@ -242,6 +242,21 @@ process.stdin.on("end", async () => {
       log({ event: "reqset", args, reply: r.result ?? r.error });
     }
   }
+  // REQACT:<json array of {tool, arguments}> (0.4.2): act as Claude Code calling the bridge's action tools (request_action, action_status) in order; log the
+  // tool list and each reply. Like the real tools, nothing in a reply approves anything.
+  const reqAct = /REQACT:(.*)/.exec(prompt);
+  if (reqAct && url) {
+    const rpc = async (method, params, id) =>
+      (await fetch(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) })).json();
+    await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "fake", version: "0" } }, 1);
+    const list = await rpc("tools/list", {}, 2);
+    log({ event: "reqactTools", tools: list.result.tools });
+    let n = 10;
+    for (const c of JSON.parse(reqAct[1])) {
+      const r = await rpc("tools/call", { name: c.tool, arguments: c.arguments }, n++);
+      log({ event: "reqact", tool: c.tool, args: c.arguments, reply: r.result ?? r.error });
+    }
+  }
   if (prompt.includes("SPAWNCHILD")) {
     // Like the real CLI, which starts helpers (its MCP children): one grandchild that sleeps, so a test can see whether Stop took it too.
     const kid = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });

@@ -76,19 +76,31 @@ export const SETTING_GRANTS_MARKER = "/* inlined from src/settingGrants.ts by bu
 const SETTING_GRANTS_IMPORT = /^import \{([^}]*)\} from "\.\/settingGrants\.js";[ \t]*\n/m;
 const SETTING_GRANTS_KEEP = new Set(["node:fs", "node:path", "node:crypto"]);
 
-function settingGrantsBlock(names) {
-  const file = join(root, "src", "settingGrants.ts");
+/**
+ * src/approvedActions.ts is inlined the same way, right after settingGrants (it uses plainFileCheck, which is then already in the built file's scope, so its
+ * `import ... from "./settingGrants.js"` line is dropped; bridge.ts must import that name too, and the build fails if it does not).
+ */
+export const APPROVED_ACTIONS_MARKER = "/* inlined from src/approvedActions.ts by build-bridge.mjs; do not edit */";
+const APPROVED_ACTIONS_IMPORT = /^import \{([^}]*)\} from "\.\/approvedActions\.js";[ \t]*\n/m;
+
+function settingGrantsBlock(names, srcName = "settingGrants", marker = SETTING_GRANTS_MARKER, scopeNames = []) {
+  const file = join(root, "src", `${srcName}.ts`);
   if (!existsSync(file)) throw new Error(`setting grants inline: ${file} is missing`);
-  let js = ts.transpileModule(readFileSync(file, "utf8"), { fileName: "src/settingGrants.ts", compilerOptions: COMPILER_OPTIONS }).outputText;
-  js = js.replace(/^import\s[^;]*?from\s+"([^"]+)";[ \t]*\n/gm, (all, from) => {
-    if (!SETTING_GRANTS_KEEP.has(from)) throw new Error(`setting grants inline: settingGrants.ts imports "${from}", which the build cannot inline (only fs, path, crypto)`);
+  let js = ts.transpileModule(readFileSync(file, "utf8"), { fileName: `src/${srcName}.ts`, compilerOptions: COMPILER_OPTIONS }).outputText;
+  js = js.replace(/^import\s*(?:\{([^}]*)\}\s*)?[^;]*?from\s+"([^"]+)";[ \t]*\n/gm, (all, imported, from) => {
+    if (from === "./settingGrants.js" && srcName !== "settingGrants") {
+      const missing = (imported ?? "").split(",").map((x) => x.trim()).filter(Boolean).filter((n) => !scopeNames.includes(n));
+      if (missing.length > 0) throw new Error(`approved actions inline: ${srcName}.ts uses ${missing.join(", ")} from settingGrants, which bridge.ts does not import`);
+      return "";
+    }
+    if (!SETTING_GRANTS_KEEP.has(from)) throw new Error(`setting grants inline: ${srcName}.ts imports "${from}", which the build cannot inline (only fs, path, crypto)`);
     return "";
   });
   js = js.replace(/^export (?=(?:async |const |let |var |function|class |enum ))/gm, "");
   const left = /^(import|export) /m.exec(js);
-  if (left) throw new Error(`setting grants inline: settingGrants.ts still has "${left[1]} " at the start of a line after stripping`);
+  if (left) throw new Error(`setting grants inline: ${srcName}.ts still has "${left[1]} " at the start of a line after stripping`);
   const list = names.join(", ");
-  const block = `const { ${list} } = (() => { ${SETTING_GRANTS_MARKER}\n${js}\nreturn { ${list} };\n})();`;
+  const block = `const { ${list} } = (() => { ${marker}\n${js}\nreturn { ${list} };\n})();`;
   try {
     new Function("fs", "path", "crypto", block.slice(block.indexOf("=> {") + 4, block.lastIndexOf("\nreturn {")) + `\nreturn { ${list} };`);
   } catch (e) {
@@ -122,6 +134,10 @@ export function buildAll() {
       const names = m[1].split(",").map((x) => x.trim()).filter(Boolean);
       const block = settingGrantsBlock(names);
       js = js.replace(SETTING_GRANTS_IMPORT, () => block + "\n");
+      const am = APPROVED_ACTIONS_IMPORT.exec(js);
+      if (!am || js.split('from "./approvedActions.js"').length !== 2) throw new Error(`${t.from}: expected one import { ... } from "./approvedActions.js"`);
+      const aNames = am[1].split(",").map((x) => x.trim()).filter(Boolean);
+      js = js.replace(APPROVED_ACTIONS_IMPORT, () => settingGrantsBlock(aNames, "approvedActions", APPROVED_ACTIONS_MARKER, names) + "\n");
     }
     if (t.swap) {
       if (js.split(t.swap[0]).length !== 2) throw new Error(`${t.from}: expected ${t.swap[0]} exactly once`);
