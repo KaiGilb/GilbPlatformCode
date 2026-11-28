@@ -45,6 +45,7 @@ import net from "node:net";
 import type { AddressInfo } from "node:net";
 import type { ChildProcess, ExecFileException } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { extractTimeLines } from "@kaigilb/gilbplatformcode-time-line";
 
 /** What the code reads from a caught error (Node errors carry `code`; our own body errors carry `status`). */
 type ErrLike = { code?: string; message?: string; status?: number };
@@ -110,6 +111,10 @@ interface Turn {
   approvals: Map<string, { settle: (allow: boolean, message?: string, scope?: WebScope) => void; answered: boolean }>;
   /** Folder mode: the person allowed every WebFetch for the rest of THIS turn. Never copied to a hand-off, a later turn or another pairing. */
   webTurnGrant: boolean;
+  /** 0.4.0: the last Time line value sent to the page as `time_left` for this (top) turn; undefined until one is sent. */
+  timeLeftLast?: string;
+  /** 0.4.0: how many `time_left` events were sent for this turn (TIME_LEFT_MAX_EVENTS + 1 once the cap notice is written). */
+  timeLeftSent?: number;
 }
 /** How far an allowed WebFetch reaches: this page only, or every page for the rest of the turn. */
 export type WebScope = "once" | "turn";
@@ -280,7 +285,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.25";
+export const BRIDGE_BUILD = "0.4.0";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -2006,6 +2011,32 @@ function toolSummary(tool: string, input: Record<string, unknown>, roots: string
   if (tool === "Bash") return (str(input.description) || str(input.command)).slice(0, 120) || tool;
   if (tool === "Glob" || tool === "Grep") return str(input.pattern).slice(0, 120) || tool;
   return tool;
+}
+
+/** 0.4.0 `time_left`: of each text block of an assistant message at most this many characters are read for the Time line. */
+export const TIME_LEFT_SCAN_MAX = 262_144;
+/** 0.4.0 `time_left`: at most this many events are sent for one turn. */
+export const TIME_LEFT_MAX_EVENTS = 30;
+/**
+ * The Time line value the agent wrote in one stream event, or null. Only an `assistant` event's `text` blocks are read (never `tool_use`
+ * blocks or their input, never `user` events, never a partial delta, never the final `result`, never a sub-agent's event), and of each block only the first
+ * TIME_LEFT_SCAN_MAX characters. The value is the LAST one of the message. Never throws on a strange shape: it returns null.
+ * Exported for tests, like the other pure helpers of this file.
+ */
+export function latestTimeLeft(ev: ClaudeEvent): string | null {
+  if (ev.type !== "assistant") return null;
+  // A sub-agent's event (same test as stepUsage): only the TOP agent's estimate counts.
+  if (ev.parent_tool_use_id !== undefined && ev.parent_tool_use_id !== null) return null;
+  const content = ev.message?.content;
+  if (!Array.isArray(content)) return null;
+  let last: string | null = null;
+  for (const b of content as Array<Record<string, unknown> | null>) {
+    if (!b || typeof b !== "object" || b.type !== "text" || typeof b.text !== "string") continue;
+    const { values } = extractTimeLines(b.text.slice(0, TIME_LEFT_SCAN_MAX));
+    const v = values[values.length - 1];
+    if (v !== undefined) last = v;
+  }
+  return last;
 }
 
 /** Every summary shown to the person is one bounded piece of text. */
@@ -4466,6 +4497,35 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
   }
 
+  /**
+   * `time_left`: tells the page the Time line VALUE an agent has just written, as soon as it is written (the page otherwise sees the
+   * agent's text only when the turn ends). Why it is shaped like this:
+   *  - Only the TOP turn: a hand-off's nested turn reads and sends nothing (owner's decision, 2026-11-28: only the top agent's estimate drives the bar).
+   *  - Only whole `assistant` events (see latestTimeLeft): what the agent did with tools, tool results and partial text never counts.
+   *  - The value only, never text: the payload is exactly { value }; the line stays in the text and the turn's result is unchanged.
+   *  - Caps: sent only when the value differs from the last one sent, and at most TIME_LEFT_MAX_EVENTS per turn (one log line when the cap is first hit).
+   *  - Never throws: a failure sends nothing and the turn goes on.
+   */
+  function timeLeftEvents(turn: Turn, ev: ClaudeEvent) {
+    if (turn.parent) return;
+    try {
+      const value = latestTimeLeft(ev);
+      if (value === null || value === turn.timeLeftLast) return;
+      const sent = turn.timeLeftSent ?? 0;
+      if (sent > TIME_LEFT_MAX_EVENTS) return; // the notice is already written
+      if (sent === TIME_LEFT_MAX_EVENTS) {
+        turn.timeLeftSent = sent + 1;
+        log(`time_left: turn ${turn.id} reached ${TIME_LEFT_MAX_EVENTS} events; no more are sent for this turn`);
+        return;
+      }
+      turn.timeLeftLast = value;
+      turn.timeLeftSent = sent + 1;
+      turn.send("time_left", { value });
+    } catch {
+      /* the estimate is a convenience: nothing is sent and the turn goes on */
+    }
+  }
+
   /** Runs `claude` once. Resolves { result?, error?, sessionId, model, apiKeyRefused?, bridgeRefused? }. */
   function runClaude(turn: Turn, mode: ClaudeMode, prompt: string): Promise<RunClaudeOut> {
     return new Promise((resolve) => {
@@ -4598,6 +4658,8 @@ export function createBridge(opts: BridgeOptions = {}) {
           } else if (turn.code && !refused && !limitsRefused && !cwdRefused && (ev.type === "assistant" || ev.type === "user")) {
             codeEvents(turn, ev, tracked);
           }
+          // Every mode, but only after an init that proved the subscription and only while the turn is not being refused (the same fail-closed rule as the answer).
+          if (ev.type === "assistant" && initOk && !refused && !limitsRefused && !cwdRefused) timeLeftEvents(turn, ev);
         }
       };
       child.stdout!.on("data", (d) => {

@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "unit": "units/time-line",
+  "package": "@kaigilb/gilbplatformcode-time-line",
+  "version": "0.1.0",
+  "purpose": "The one line an AI agent writes to say how long until it needs the person again, its seven values, and how a loosely written value is snapped to one of them.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "4d30c06ac28d0f9270ca7e0b29a1e3537bbfd859",
+    "files": [
+      { "path": "src/lib/timeLeft/timeLine.ts", "lines": [1, 9], "to": "src/timeLine.ts" },
+      { "path": "src/lib/timeLeft/timeLine.ts", "lines": [28, 34], "to": "src/timeLine.ts" },
+      { "path": "src/lib/timeLeft/timeLine.ts", "lines": [61, 451], "to": "src/timeLine.ts" },
+      { "path": "src/lib/timeLeft/timeLine.ts", "lines": [13, 26], "to": "src/timeValues.ts" },
+      { "path": "src/lib/timeLeft/timeLine.ts", "lines": [36, 59], "to": "src/timeValues.ts" },
+      { "path": "src/lib/timeLeft/timeScale.ts", "lines": [10, 12], "to": "src/timeValues.ts" },
+      { "path": "src/lib/timeLeft/timeScale.ts", "lines": [16, 22], "to": "src/timeValues.ts" },
+      { "path": "src/lib/timeLeft/timeScale.ts", "lines": [30, 44], "to": "src/timeValues.ts" },
+      { "path": "src/lib/timeLeft/timeLine.test.ts", "lines": null, "to": "src/timeLine.test.ts" },
+      { "path": "src/lib/timeLeft/timeScale.test.ts", "lines": [20, 41], "to": "src/timeValues.test.ts" },
+      { "path": "src/lib/timeLeft/qatimeLine.test.ts", "lines": null, "to": "src/qatimeLine.test.ts" },
+      { "path": "src/lib/timeLeft/qatime2Line.test.ts", "lines": null, "to": "src/qatime2Line.test.ts" }
+    ]
+  },
+  "namedChanges": [
+    "snapToValue moved from timeLine.ts to src/timeValues.ts, and the scale points (TIME_MARKS, TimeMark, the eight points, positionOf) moved there from timeScale.ts; names and behaviour unchanged; TIME_TOP_MS is private in the unit (exported in the app);",
+    "isTimeValue is added (true only for a string that is exactly one of the seven values);",
+    "comments: the header of src/timeValues.ts is new, the import in src/timeLine.ts reads from ./timeValues; no other code changed;",
+    "stays in the app (the app will import TIME_MARKS and positionOf from this unit): the bar's run and what only the bar needs, startRun, reEstimate, TimeRun, viewRun, TimeLeftView, msAt, leftText, overText, TIME_TOP_MS, TIME_DONE_POSITION, and the history of estimates;",
+    "tests: the snapToValue tests of timeLine.test.ts moved to src/timeValues.test.ts, the TIME_DONE_POSITION line of the TIME_MARKS test stayed in the app, imports fixed in the four moved test files; qatimeScale.test.ts is not moved (it tests the bar's run and the history)."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/fixtures.test.ts",
+    "src/linearTime.test.ts",
+    "src/hostAgnostic.test.ts",
+    "fixtures/time-lines.json"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
