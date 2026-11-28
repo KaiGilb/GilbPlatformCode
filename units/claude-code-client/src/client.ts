@@ -173,6 +173,31 @@ function readTurnUsage(raw: unknown): TurnUsage | undefined {
   return usage;
 }
 
+// --- What goes to the platform as userText ---
+// Spec: S.Plan.Report. A Plan -> Report request (summary plus a hidden plan block of up to 60,000 characters) was
+// refused live (release b59369dd) with "body/userText must NOT have more than 24000 characters".
+/**
+ * The most characters the client sends as `userText` to the platform's claude-code routes. It equals GilbPlatform's
+ * `MAX_CONTENT` (`src/routes/ai-chat.ts`), which the routes enforce on `userText`. The platform reads that field only
+ * for a named role and a vault mention, so the start of the message is enough. The bridge still gets the whole message.
+ */
+export const MAX_USER_TEXT = 24_000;
+
+/**
+ * Cut `text` to at most MAX_USER_TEXT UTF-16 units for the platform's `userText` field.
+ * @param text the whole last message
+ * @returns `text` unchanged when it fits, else its first MAX_USER_TEXT units, never ending on a lone high surrogate
+ */
+export function capUserText(text: string): string {
+  if (text.length <= MAX_USER_TEXT) return text;
+  // Gotcha: Ajv's maxLength counts code points (measured: 24,000 emoji = 48,000 units passed; 24,001 emoji failed; Ajv 8.20.0,
+  // GilbPlatform's Fastify options). A code point is at most 2 units, so a cut to 24,000 units always passes.
+  // Cutting between the halves of an emoji would leave a lone high surrogate (broken text), so drop that half too.
+  const last = text.charCodeAt(MAX_USER_TEXT - 1);
+  const end = last >= 0xd800 && last <= 0xdbff ? MAX_USER_TEXT - 1 : MAX_USER_TEXT;
+  return text.slice(0, end);
+}
+
 /** The model names a turn may ask for (bridge 0.3.5); a full name like `claude-opus-5-5` is allowed too. */
 export const MODEL_ALIASES = ["opus", "sonnet", "haiku", "fable"] as const;
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -1002,7 +1027,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     if (!conn) throw new ClaudeCodeBridgeError(401, "Claude Code is not connected. Press Connect.");
 
     const vaults = (opts.contentVaultIds ?? []).map((id) => id.trim()).filter((id) => id.startsWith("http"));
-    const turnFields: Record<string, unknown> = { userText: last.content, turnId: newTurnId() };
+    const turnFields: Record<string, unknown> = { userText: capUserText(last.content), turnId: newTurnId() };
     if (vaults.length > 0) turnFields.contentVaultIds = vaults;
     const agentEntry = opts.agentEntry?.trim();
     if (agentEntry) turnFields.agentEntry = agentEntry;
