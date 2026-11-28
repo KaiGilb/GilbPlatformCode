@@ -2019,12 +2019,14 @@ export const TIME_LEFT_SCAN_MAX = 262_144;
 export const TIME_LEFT_MAX_EVENTS = 30;
 /**
  * The Time line value the agent wrote in one stream event, or null. Only an `assistant` event's `text` blocks are read (never `tool_use`
- * blocks or their input, never `user` events, never a partial delta, never the final `result`), and of each block only the first
+ * blocks or their input, never `user` events, never a partial delta, never the final `result`, never a sub-agent's event), and of each block only the first
  * TIME_LEFT_SCAN_MAX characters. The value is the LAST one of the message. Never throws on a strange shape: it returns null.
  * Exported for tests, like the other pure helpers of this file.
  */
 export function latestTimeLeft(ev: ClaudeEvent): string | null {
   if (ev.type !== "assistant") return null;
+  // A sub-agent's event (same test as stepUsage): only the TOP agent's estimate counts.
+  if (ev.parent_tool_use_id !== undefined && ev.parent_tool_use_id !== null) return null;
   const content = ev.message?.content;
   if (!Array.isArray(content)) return null;
   let last: string | null = null;

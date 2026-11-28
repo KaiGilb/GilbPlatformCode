@@ -15,6 +15,8 @@
 //               with the app's own sign-in, as the person, and hands the answer back. The bridge never holds a
 //               GilbPlatform credential, and ⛔ no Claude credential is ever seen here.
 
+import { isTimeValue, type TimeValue } from "@kaigilb/gilbplatformcode-time-line";
+
 export const CLAUDE_CODE_PROVIDER = "claude-code" as const;
 
 /** What the bridge says on `/v1/hello`. */
@@ -281,6 +283,9 @@ export type ClaudeCodeStreamEvent =
   | { event: "code_activity"; data: { tool: string; summary: string }; hop?: true }
   | { event: "code_tool_error"; data: { tool: string; summary: string; text: string }; hop?: true }
   | { event: "files_changed"; data: FilesChanged }
+  // The agent's own estimate of the time until it needs the person, sent during a turn (client 0.4.0, bridge 0.4.0; any mode).
+  // Only the top turn sends it; a malformed one is dropped, never thrown.
+  | { event: "time_left"; data: { value: TimeValue } }
   | { event: "approval_request"; data: ApprovalRequest }
   | { event: "approval_done"; data: { id: string; allow: boolean; scope?: ApprovalScope } };
 
@@ -1237,6 +1242,10 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           } else if (ev.event === "budget_spent") {
             spent = true;
             turnBudgetSpent = true;
+          } else if (ev.event === "time_left") {
+            // The agent's own estimate (bridge 0.4.0), any mode. Only the person's own turn passes it on: a hand-off's nested turn
+            // (`announceStart` false) drops it. Only a valid `value` goes on, and only `value`: no other key, so no text can travel here.
+            if (announceStart && isTimeValue(data.value)) opts.onEvent?.({ event: "time_left", data: { value: data.value } });
           } else if (ev.event === "message") {
             if (data.budgetSpent === true) {
               spent = true;

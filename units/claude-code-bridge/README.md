@@ -283,6 +283,7 @@ So a page that lost track of a turn (a reload, a remounted component) can find i
 - **`time_left`** `{ value }` (0.4.0) is sent when an agent writes the line `[Time until I need you: <value>]`, as soon as it is written, in every mode. `value` is one of the seven values of `units/time-line` (`1 min` to `5 hours +`; a loosely written value is snapped).
   - The payload is exactly `{ value }`: no text, no index. The bridge does not remove the line from any text, and the turn's `message` is unchanged.
   - Only the top turn sends it; a hand-off (nested turn) reads and sends nothing.
+  - A sub-agent's own assistant events inside the top turn (those with `parent_tool_use_id`) are not read either: only the top agent's estimate counts.
   - Only whole `assistant` text blocks are read (not tool calls, tool results, partial text or the final result), the first 262,144 characters of each; the last value of a message counts.
   - It is sent only when the value differs from the last one sent for the turn, and at most 30 times per turn (one log line when the cap is reached).
   - The reader is the unit's own code, inlined into `bridge/bridge.mjs` by the build, so the built file has no package to resolve.

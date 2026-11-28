@@ -203,6 +203,17 @@ describe("time_left: what is not read", () => {
     expect(timeLeft(top)).toEqual([{ value: "10 min" }]);
   });
 
+  it("an assistant event a sub-agent wrote (parent_tool_use_id set) sends nothing; the same message without it sends one", async () => {
+    const secret = await start();
+    const msg = assistantText(LINE("10 min"));
+    const sub = await run(secret, [{ ...msg, parent_tool_use_id: "toolu_sub1" }]);
+    expect(timeLeft(sub)).toEqual([]);
+    const top = await run(secret, [msg]);
+    expect(timeLeft(top)).toEqual([{ value: "10 min" }]);
+    expect(latestTimeLeft({ ...msg, parent_tool_use_id: "toolu_sub1" })).toBeNull();
+    expect(latestTimeLeft({ ...msg, parent_tool_use_id: null })).toBe("10 min");
+  });
+
   it("the line inside a tool_use input, a user event's tool result, or only the final result text sends nothing", async () => {
     const secret = await start();
     const events = [
