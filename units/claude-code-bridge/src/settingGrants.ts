@@ -48,7 +48,16 @@ export const GRANT_SCOPE = "project-until-removed";
 /** Project names the bridge lists: letters, digits, dot, dash, underscore, at most 64, not starting with a dot. Keeps a project id from walking the path. */
 const PROJECT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const MAX_GRANTS_PER_PROJECT = 50;
-const MAX_REASON = 300;
+const MAX_REASON = 500;
+/** A request's value is at most this long, and a socket path at most this many parts: checked before any disk call (a flood of long paths must stay cheap). */
+const MAX_VALUE = 512;
+const MAX_SEGMENTS = 32;
+/** Parents tried when a path does not exist yet; no loop on the disk is ever longer than this. */
+const MAX_RESOLVE_STEPS = 64;
+/** At most this many request_setting calls in one turn, refused ones included; every call after it is refused without checking. */
+const MAX_CALLS_PER_TURN = 20;
+/** A pending request ends this long after it was made, if its turn has not ended it (or a new request) before. */
+const PENDING_MS = 15 * 60 * 1000;
 
 // --- Types -----------------------------------------------------------------------------------------------------------
 
@@ -57,13 +66,15 @@ export interface ProjectRef { id: string; folderId: string; root: string }
 /** A setting after checking: the name and the exact value that would go into the sandbox. */
 export interface NormalizedSetting { setting: SettingName; value: true | string }
 export type Verdict = { ok: true; normalized: NormalizedSetting; hash: string } | { ok: false; reason: string };
-/** One stored grant. `scope` is always GRANT_SCOPE; `grantedBy` is a short fingerprint of the pairing that approved. */
+/** One stored grant. `scope` is always GRANT_SCOPE; `grantedBy` is a short fingerprint of the pairing that approved; `mac` is the keyed seal of this install (macOf). */
 export interface SettingGrant {
-  id: string; projectId: string; folderId: string; normalized: NormalizedSetting; hash: string;
+  id: string; projectId: string; folderId: string; normalized: NormalizedSetting; hash: string; mac: string;
   grantedAt: string; grantedBy: string; bridgeVersion: string; scope: typeof GRANT_SCOPE;
 }
 export type GrantMode = "folder" | "computer";
 type Realpath = (p: string) => string;
+/** The disk's own spelling of a path (`.claude` stays `.claude` however it was typed on a case-insensitive disk); the plain call where there is no native one. */
+const defaultRp: Realpath = (p) => (typeof fs.realpathSync.native === "function" ? fs.realpathSync.native(p) : fs.realpathSync(p));
 
 // --- Checking one request --------------------------------------------------------------------------------------------
 
@@ -79,7 +90,8 @@ export function neverReason(setting: unknown, value: unknown): string | null {
   if (typeof value === "string") {
     // Any wildcard host or path, however it is spelled.
     if (/[*?]/.test(value)) return "A wildcard can never be granted.";
-    if (value.split(/[\\/]+/).includes(".claude") || /(^|[\\/])\.claude\.json$/.test(value)) return "A .claude path can never be granted.";
+    // In any case, on every platform: `.Claude` is the same folder as `.claude` on a case-insensitive disk.
+    if (value.split(/[\\/]+/).some((part) => part.toLowerCase() === ".claude") || /(^|[\\/])\.claude\.json$/i.test(value)) return "A .claude path can never be granted.";
     // The docker and ssh-agent sockets hand over the whole computer; refused even if some link inside the project points at them.
     if (/docker\.sock|containerd\.sock|ssh-agent|ssh_auth_sock|agent\.\d+|S\.gpg-agent/i.test(value)) return "That socket can never be granted (docker, ssh-agent and gpg-agent sockets are never allowed).";
   }
@@ -94,11 +106,12 @@ export function hashOf(project: ProjectRef, n: NormalizedSetting): string {
 /**
  * The path a socket would really have: every link followed. A path that does not exist yet is the real path of its nearest existing parent plus the
  * missing names; a link whose target is missing (it exists, but cannot be resolved) gives null, because the target could be made later anywhere.
+ * At most MAX_RESOLVE_STEPS parents are tried; a path that needs more gives null.
  */
 function realResolve(p: string, rp: Realpath): string | null {
   const rest: string[] = [];
   let cur = path.resolve(p);
-  for (;;) {
+  for (let step = 0; step < MAX_RESOLVE_STEPS; step++) {
     try {
       const r = rp(cur);
       return rest.length ? path.join(r, ...rest.reverse()) : r;
@@ -112,6 +125,7 @@ function realResolve(p: string, rp: Realpath): string | null {
       cur = up;
     }
   }
+  return null;
 }
 
 /** Is `child` strictly inside `root` (not the root itself)? */
@@ -124,7 +138,7 @@ function strictlyInside(root: string, child: string): boolean {
  * Checks one setting and value for one project. Pure but for reading links on disk (the `rp` argument stands in for fs.realpathSync in tests).
  * Order: the never-list first, then the allow-list, then the exact rule of that item.
  */
-export function validateSetting(setting: unknown, value: unknown, project: ProjectRef, rp: Realpath = fs.realpathSync): Verdict {
+export function validateSetting(setting: unknown, value: unknown, project: ProjectRef, rp: Realpath = defaultRp): Verdict {
   if (!project || typeof project.id !== "string" || !PROJECT_ID_RE.test(project.id) || typeof project.folderId !== "string" || typeof project.root !== "string") return { ok: false, reason: "No such project." };
   const never = neverReason(setting, value);
   if (never) return { ok: false, reason: never };
@@ -152,21 +166,35 @@ export function validateSetting(setting: unknown, value: unknown, project: Proje
   return { ok: true, normalized, hash: hashOf(project, normalized) };
 }
 
-/** The reason text, as the person will read it: a short string with no control characters. Null if there is none. */
+/**
+ * The reason text, as the person will read it: a short string with no control character of any kind. C0, DEL, C1 and the line and paragraph
+ * separators (U+2028, U+2029) become a space; every format character (bidi controls U+202A-202E and U+2066-2069, zero-width U+200B-200D, U+FEFF
+ * and the rest of \p{Cf}) is removed, so nothing can reorder or hide the setting and value drawn next to it. Null if there is none, or it is too long.
+ */
 function cleanReason(r: unknown): string | null {
-  if (typeof r !== "string") return null;
-  const t = r.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
-  return t === "" || t.length > MAX_REASON ? null : t;
+  if (typeof r !== "string" || r.length > MAX_REASON) return null;
+  const t = r.replace(/\p{Cf}+/gu, "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
+  return t === "" ? null : t;
+}
+
+/** The size limits of a request's value, checked before anything touches the disk. Null when it is within them. */
+function boundsProblem(setting: unknown, value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  if (value.length > MAX_VALUE) return `A value is at most ${MAX_VALUE} characters.`;
+  if (setting === "sandbox.network.allowUnixSockets" && value.split(/[\\/]+/).filter((x) => x !== "").length > MAX_SEGMENTS) return `A socket path has at most ${MAX_SEGMENTS} parts.`;
+  return null;
 }
 
 /** The request tool's checker: `{setting, value, reason}` for one project. A refusal says why; the caller adds the allowed list. */
-export function validateRequest(req: unknown, project: ProjectRef, rp: Realpath = fs.realpathSync): Verdict {
+export function validateRequest(req: unknown, project: ProjectRef, rp: Realpath = defaultRp): Verdict {
   if (!req || typeof req !== "object") return { ok: false, reason: "The request must be an object with setting, value and reason." };
   const r = req as Record<string, unknown>;
   // Only these three fields: an `approve`, `grant` or `nonce` field in a request is refused, not ignored, so nothing can pretend to approve.
   const extra = Object.keys(r).filter((k) => k !== "setting" && k !== "value" && k !== "reason");
   if (extra.length > 0) return { ok: false, reason: `A request has only setting, value and reason; it cannot carry: ${extra.join(", ")}.` };
   if (cleanReason(r.reason) === null) return { ok: false, reason: `A reason is needed: one short sentence of at most ${MAX_REASON} characters saying what is blocked.` };
+  const big = boundsProblem(r.setting, r.value);
+  if (big) return { ok: false, reason: big };
   return validateSetting(r.setting, r.value, project, rp);
 }
 
@@ -197,14 +225,25 @@ export function mergeGrant(settings: Record<string, any>, n: NormalizedSetting, 
   }
 }
 
-/** One stored entry, checked again from nothing: its shape, scope, project, setting, value and hash. Null drops it. */
-function recheck(g: unknown, project: ProjectRef, rp: Realpath): NormalizedSetting | null {
+/**
+ * The keyed seal of one stored grant: HMAC-SHA256 under this install's secret (see createGrantBook) over its id, project, folder, setting, value,
+ * hash and scope. The hash alone is public arithmetic; only this seal says the bridge itself wrote the entry after the person approved.
+ */
+export function macOf(key: Buffer, g: Record<string, any>): string {
+  const n = g.normalized;
+  return crypto.createHmac("sha256", key).update(JSON.stringify(["settingGrant/2", g.id, g.projectId, g.folderId, n?.setting, n?.value, g.hash, g.scope])).digest("hex");
+}
+
+/** One stored entry, checked again from nothing: its shape, seal, scope, project, setting, value and hash. Null drops it. */
+function recheck(g: unknown, project: ProjectRef, key: Buffer | null | undefined, rp: Realpath): NormalizedSetting | null {
+  if (!Buffer.isBuffer(key) || key.length !== 32) return null; // no secret, no valid seal
   if (!g || typeof g !== "object") return null;
   const e = g as Record<string, any>;
   if (typeof e.id !== "string" || e.scope !== GRANT_SCOPE) return null;
   if (e.projectId !== project.id || e.folderId !== project.folderId) return null; // another project's grant
   const n = e.normalized;
   if (!n || typeof n !== "object" || typeof e.hash !== "string") return null;
+  if (typeof e.mac !== "string" || !eq(macOf(key, e), e.mac)) return null; // written by hand, by another install, or changed since
   const v = validateSetting(n.setting, n.value, project, rp);
   if (!v.ok) return null; // unknown, on the never-list, outside the project, not in the catalog
   if (v.hash !== e.hash || v.normalized.setting !== n.setting || v.normalized.value !== n.value) return null; // tampered, or a link now points elsewhere
@@ -215,10 +254,10 @@ function recheck(g: unknown, project: ProjectRef, rp: Realpath): NormalizedSetti
  * The settings a turn runs with: `base` plus every stored grant that still passes. Pure: `base` is not changed. A grant that is unknown, tampered
  * with, on the never-list or from another project is dropped, so an item taken out of ALLOWED by a bridge upgrade stops applying at once.
  */
-export function applyGrants<T extends Record<string, any>>(base: T, grants: readonly unknown[], mode: GrantMode, project: ProjectRef, rp: Realpath = fs.realpathSync): T {
+export function applyGrants<T extends Record<string, any>>(base: T, grants: readonly unknown[], mode: GrantMode, project: ProjectRef, key: Buffer | null | undefined, rp: Realpath = defaultRp): T {
   const out = structuredClone(base);
   for (const g of Array.isArray(grants) ? grants : []) {
-    const n = recheck(g, project, rp);
+    const n = recheck(g, project, key, rp);
     if (n) mergeGrant(out, n, mode);
   }
   return out;
@@ -226,10 +265,10 @@ export function applyGrants<T extends Record<string, any>>(base: T, grants: read
 
 // --- The store and the pending requests ------------------------------------------------------------------------------
 
-/** One request that waits for the person. The nonce goes to the app only, never to the agent. */
+/** One request that waits for the person. The nonce goes to the app only, never to the agent. `turnEnded`: the turn that asked is over (the person may still answer). */
 export interface PendingRequest {
   requestId: string; nonce: string; hash: string; reason: string; turnId: string; createdAt: string;
-  project: ProjectRef; normalized: NormalizedSetting;
+  project: ProjectRef; normalized: NormalizedSetting; turnEnded: boolean;
 }
 export type RequestResult =
   | { status: "pending"; requestId: string; merged: boolean }
@@ -247,6 +286,8 @@ export interface GrantBookOptions {
 
 /** The folder that holds every project's grants. A code turn may neither read nor write it (denyWrite and denyRead). */
 export const storeFolder = (stateDir: string) => path.join(stateDir, "projects");
+/** The install's secret for sealing grants: 32 random bytes in the store folder (mode 0600), beside the grants and so under the same denyRead and denyWrite. Not a project name, so no project can own it. */
+export const SECRET_FILE = ".grant-secret";
 const eq = (a: string, b: string) => {
   const h = (s: string) => crypto.createHash("sha256").update(s).digest();
   return crypto.timingSafeEqual(h(a), h(b));
@@ -255,10 +296,38 @@ const eq = (a: string, b: string) => {
 /** The grant store and the pending requests of one bridge. Reads the file afresh on every call: nothing is cached, so a removed grant is gone at once. */
 export function createGrantBook(o: GrantBookOptions) {
   const now = o.now ?? (() => new Date());
-  const rp = o.realpath ?? fs.realpathSync;
+  const rp = o.realpath ?? defaultRp;
   const log = o.log ?? (() => {});
   // At most ONE pending request per project (a flood must not wear the person down); in memory only, so a restart clears them.
   const pending = new Map<string, PendingRequest>();
+  // How many request_setting calls each running turn has made (refused ones too); a turn's count is dropped when the turn ends.
+  const calls = new Map<string, number>();
+  const secretFile = path.join(storeFolder(o.stateDir), SECRET_FILE);
+
+  /** The install's secret, or null if there is none yet or the file is not 32 bytes (then no entry can verify). Read afresh each time. */
+  function readKey(): Buffer | null {
+    try {
+      const b = fs.readFileSync(secretFile);
+      return b.length === 32 ? b : null;
+    } catch {
+      return null;
+    }
+  }
+  /** The secret, made once (random, 0600) when the first grant is saved. A file of the wrong size is replaced: what it sealed is gone. */
+  function keyForSaving(): Buffer {
+    const have = readKey();
+    if (have) return have;
+    fs.mkdirSync(path.dirname(secretFile), { recursive: true, mode: 0o700 });
+    fs.rmSync(secretFile, { force: true });
+    const k = crypto.randomBytes(32);
+    fs.writeFileSync(secretFile, k, { mode: 0o600, flag: "wx" });
+    return k;
+  }
+  /** Drops a request that has waited too long. */
+  function sweep(): void {
+    const t = now().getTime();
+    for (const [k, p] of pending) if (!(t - Date.parse(p.createdAt) <= PENDING_MS)) pending.delete(k);
+  }
 
   /** The store file of a project, or null for an id that is not a plain project name (`..`, a slash, a long name). */
   function fileFor(projectId: unknown): string | null {
@@ -291,45 +360,65 @@ export function createGrantBook(o: GrantBookOptions) {
     grantsFor(project: ProjectRef): unknown[] {
       return readAll(project.id);
     },
+    /** The secret that seals this install's grants, for applyGrants; null until the first grant is saved. */
+    key(): Buffer | null {
+      return readKey();
+    },
     /** Grants of one project as the app shows them: only entries that pass the check now (a dropped one is not shown as active). */
     listGrants(project: ProjectRef): SettingGrant[] {
-      return readAll(project.id).filter((g) => recheck(g, project, rp) !== null) as SettingGrant[];
+      const key = readKey();
+      return readAll(project.id).filter((g) => recheck(g, project, key, rp) !== null) as SettingGrant[];
     },
     /** The request tool: validates, then keeps the request pending. It can neither grant nor write the store. */
     request(project: ProjectRef, req: unknown, turnId: string): RequestResult {
+      // The cap comes first and costs nothing: past it a turn gets the same refusal with no checking and no disk work.
+      const made = (calls.get(turnId) ?? 0) + 1;
+      if (calls.size >= 1000 && !calls.has(turnId)) calls.delete(calls.keys().next().value as string);
+      calls.set(turnId, made);
+      if (made > MAX_CALLS_PER_TURN) return { status: "refused", reason: `too many setting requests in this turn (at most ${MAX_CALLS_PER_TURN}). Stop this turn and say what is blocked.`, allowed: ALLOWED_LIST };
       const v = validateRequest(req, project, rp);
       if (!v.ok) return { status: "refused", reason: v.reason, allowed: ALLOWED_LIST };
       const reason = cleanReason((req as Record<string, unknown>).reason)!;
+      sweep();
       const have = pending.get(project.id);
       if (have) {
-        // The same request again is merged into the one that waits; a different one waits its turn.
-        if (have.hash === v.hash) return { status: "pending", requestId: have.requestId, merged: true };
-        return { status: "refused", reason: "Another request for this project is already waiting for the person's approval. Stop this turn and say what is blocked.", allowed: ALLOWED_LIST };
+        // The same request again is merged into the one that waits (and is the running turn's now); a different one waits its turn,
+        // unless the turn that made the waiting one is over: then the slot is free and the old card finds nothing.
+        if (have.hash === v.hash) {
+          have.turnEnded = false;
+          have.turnId = turnId;
+          return { status: "pending", requestId: have.requestId, merged: true };
+        }
+        if (!have.turnEnded) return { status: "refused", reason: "Another request for this project is already waiting for the person's approval. Stop this turn and say what is blocked.", allowed: ALLOWED_LIST };
+        pending.delete(project.id);
       }
       if (readAll(project.id).length >= MAX_GRANTS_PER_PROJECT) return { status: "refused", reason: "This project already has the most grants it can hold.", allowed: ALLOWED_LIST };
       const p: PendingRequest = {
         requestId: crypto.randomBytes(12).toString("hex"), nonce: crypto.randomBytes(16).toString("hex"), hash: v.hash, reason, turnId,
-        createdAt: now().toISOString(), project, normalized: v.normalized,
+        createdAt: now().toISOString(), project, normalized: v.normalized, turnEnded: false,
       };
       pending.set(project.id, p);
       return { status: "pending", requestId: p.requestId, merged: false };
     },
     /** What the app shows on a card: the exact setting and value, the reason, and the nonce and hash it must send back. */
     listRequests(projectId: string): PendingRequest[] {
+      sweep();
       const p = pending.get(projectId);
       return p ? [p] : [];
     },
     /** The person's approval. Needs the nonce and the hash of the pending request; works once. A refusal leaves the request pending. */
     grant(requestId: unknown, nonce: unknown, hash: unknown, by: string): GrantResult {
+      sweep();
       const p = [...pending.values()].find((x) => typeof requestId === "string" && eq(x.requestId, requestId));
       if (!p) return { ok: false, status: 404, error: "No such pending request." };
       if (typeof nonce !== "string" || !eq(p.nonce, nonce)) return { ok: false, status: 403, error: "The nonce does not match this request." };
       if (typeof hash !== "string" || !eq(p.hash, hash)) return { ok: false, status: 409, error: "The request is not the one that was shown." };
       const g: SettingGrant = {
-        id: crypto.randomBytes(12).toString("hex"), projectId: p.project.id, folderId: p.project.folderId, normalized: p.normalized, hash: p.hash,
+        id: crypto.randomBytes(12).toString("hex"), projectId: p.project.id, folderId: p.project.folderId, normalized: p.normalized, hash: p.hash, mac: "",
         grantedAt: now().toISOString(), grantedBy: by.slice(0, 16), bridgeVersion: o.bridgeVersion, scope: GRANT_SCOPE,
       };
       try {
+        g.mac = macOf(keyForSaving(), g);
         const rest = readAll(p.project.id).filter((e) => (e as Record<string, unknown>)?.hash !== p.hash);
         writeAll(p.project.id, [...rest, g]);
       } catch (e) {
@@ -341,8 +430,14 @@ export function createGrantBook(o: GrantBookOptions) {
     },
     /** The person's "no": drops the pending request so a new one can be made. */
     decline(requestId: unknown): boolean {
+      sweep();
       for (const [k, p] of pending) if (typeof requestId === "string" && eq(p.requestId, requestId)) { pending.delete(k); return true; }
       return false;
+    },
+    /** The turn is over: its call count is dropped, and a request it made is marked so (the person may still answer it; another turn's different request may take the slot). */
+    endTurn(turnId: string): void {
+      calls.delete(turnId);
+      for (const p of pending.values()) if (p.turnId === turnId) p.turnEnded = true;
     },
     /** Removes one grant by id from whichever project holds it. The next turn is built without it. */
     revoke(grantId: unknown): boolean {

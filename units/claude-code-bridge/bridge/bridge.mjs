@@ -553,7 +553,7 @@ function extractTimeLines(text, opts) {
 
 return { extractTimeLines };
 })();
-const { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting } = (() => { /* inlined from src/settingGrants.ts by build-bridge.mjs; do not edit */
+const { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, macOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting } = (() => { /* inlined from src/settingGrants.ts by build-bridge.mjs; do not edit */
 /**
  * Setting grants: how a code turn can ask for ONE sandbox setting to be widened, and how the person's approval is kept (0.4.1).
  *
@@ -594,7 +594,18 @@ const GRANT_SCOPE = "project-until-removed";
 /** Project names the bridge lists: letters, digits, dot, dash, underscore, at most 64, not starting with a dot. Keeps a project id from walking the path. */
 const PROJECT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const MAX_GRANTS_PER_PROJECT = 50;
-const MAX_REASON = 300;
+const MAX_REASON = 500;
+/** A request's value is at most this long, and a socket path at most this many parts: checked before any disk call (a flood of long paths must stay cheap). */
+const MAX_VALUE = 512;
+const MAX_SEGMENTS = 32;
+/** Parents tried when a path does not exist yet; no loop on the disk is ever longer than this. */
+const MAX_RESOLVE_STEPS = 64;
+/** At most this many request_setting calls in one turn, refused ones included; every call after it is refused without checking. */
+const MAX_CALLS_PER_TURN = 20;
+/** A pending request ends this long after it was made, if its turn has not ended it (or a new request) before. */
+const PENDING_MS = 15 * 60 * 1000;
+/** The disk's own spelling of a path (`.claude` stays `.claude` however it was typed on a case-insensitive disk); the plain call where there is no native one. */
+const defaultRp = (p) => (typeof fs.realpathSync.native === "function" ? fs.realpathSync.native(p) : fs.realpathSync(p));
 // --- Checking one request --------------------------------------------------------------------------------------------
 const lower = (s) => s.replace(/\s+/g, "").toLowerCase();
 /** Why this setting or value is on the never-list, or null. Runs BEFORE the allow-list, and again when a grant is loaded. */
@@ -611,7 +622,8 @@ function neverReason(setting, value) {
         // Any wildcard host or path, however it is spelled.
         if (/[*?]/.test(value))
             return "A wildcard can never be granted.";
-        if (value.split(/[\\/]+/).includes(".claude") || /(^|[\\/])\.claude\.json$/.test(value))
+        // In any case, on every platform: `.Claude` is the same folder as `.claude` on a case-insensitive disk.
+        if (value.split(/[\\/]+/).some((part) => part.toLowerCase() === ".claude") || /(^|[\\/])\.claude\.json$/i.test(value))
             return "A .claude path can never be granted.";
         // The docker and ssh-agent sockets hand over the whole computer; refused even if some link inside the project points at them.
         if (/docker\.sock|containerd\.sock|ssh-agent|ssh_auth_sock|agent\.\d+|S\.gpg-agent/i.test(value))
@@ -626,11 +638,12 @@ function hashOf(project, n) {
 /**
  * The path a socket would really have: every link followed. A path that does not exist yet is the real path of its nearest existing parent plus the
  * missing names; a link whose target is missing (it exists, but cannot be resolved) gives null, because the target could be made later anywhere.
+ * At most MAX_RESOLVE_STEPS parents are tried; a path that needs more gives null.
  */
 function realResolve(p, rp) {
     const rest = [];
     let cur = path.resolve(p);
-    for (;;) {
+    for (let step = 0; step < MAX_RESOLVE_STEPS; step++) {
         try {
             const r = rp(cur);
             return rest.length ? path.join(r, ...rest.reverse()) : r;
@@ -652,6 +665,7 @@ function realResolve(p, rp) {
             cur = up;
         }
     }
+    return null;
 }
 /** Is `child` strictly inside `root` (not the root itself)? */
 function strictlyInside(root, child) {
@@ -662,7 +676,7 @@ function strictlyInside(root, child) {
  * Checks one setting and value for one project. Pure but for reading links on disk (the `rp` argument stands in for fs.realpathSync in tests).
  * Order: the never-list first, then the allow-list, then the exact rule of that item.
  */
-function validateSetting(setting, value, project, rp = fs.realpathSync) {
+function validateSetting(setting, value, project, rp = defaultRp) {
     if (!project || typeof project.id !== "string" || !PROJECT_ID_RE.test(project.id) || typeof project.folderId !== "string" || typeof project.root !== "string")
         return { ok: false, reason: "No such project." };
     const never = neverReason(setting, value);
@@ -700,15 +714,29 @@ function validateSetting(setting, value, project, rp = fs.realpathSync) {
     }
     return { ok: true, normalized, hash: hashOf(project, normalized) };
 }
-/** The reason text, as the person will read it: a short string with no control characters. Null if there is none. */
+/**
+ * The reason text, as the person will read it: a short string with no control character of any kind. C0, DEL, C1 and the line and paragraph
+ * separators (U+2028, U+2029) become a space; every format character (bidi controls U+202A-202E and U+2066-2069, zero-width U+200B-200D, U+FEFF
+ * and the rest of \p{Cf}) is removed, so nothing can reorder or hide the setting and value drawn next to it. Null if there is none, or it is too long.
+ */
 function cleanReason(r) {
-    if (typeof r !== "string")
+    if (typeof r !== "string" || r.length > MAX_REASON)
         return null;
-    const t = r.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
-    return t === "" || t.length > MAX_REASON ? null : t;
+    const t = r.replace(/\p{Cf}+/gu, "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
+    return t === "" ? null : t;
+}
+/** The size limits of a request's value, checked before anything touches the disk. Null when it is within them. */
+function boundsProblem(setting, value) {
+    if (typeof value !== "string")
+        return null;
+    if (value.length > MAX_VALUE)
+        return `A value is at most ${MAX_VALUE} characters.`;
+    if (setting === "sandbox.network.allowUnixSockets" && value.split(/[\\/]+/).filter((x) => x !== "").length > MAX_SEGMENTS)
+        return `A socket path has at most ${MAX_SEGMENTS} parts.`;
+    return null;
 }
 /** The request tool's checker: `{setting, value, reason}` for one project. A refusal says why; the caller adds the allowed list. */
-function validateRequest(req, project, rp = fs.realpathSync) {
+function validateRequest(req, project, rp = defaultRp) {
     if (!req || typeof req !== "object")
         return { ok: false, reason: "The request must be an object with setting, value and reason." };
     const r = req;
@@ -718,6 +746,9 @@ function validateRequest(req, project, rp = fs.realpathSync) {
         return { ok: false, reason: `A request has only setting, value and reason; it cannot carry: ${extra.join(", ")}.` };
     if (cleanReason(r.reason) === null)
         return { ok: false, reason: `A reason is needed: one short sentence of at most ${MAX_REASON} characters saying what is blocked.` };
+    const big = boundsProblem(r.setting, r.value);
+    if (big)
+        return { ok: false, reason: big };
     return validateSetting(r.setting, r.value, project, rp);
 }
 // --- Applying grants to a settings object ----------------------------------------------------------------------------
@@ -752,8 +783,18 @@ function mergeGrant(settings, n, mode) {
         net.allowedDomains = list;
     }
 }
-/** One stored entry, checked again from nothing: its shape, scope, project, setting, value and hash. Null drops it. */
-function recheck(g, project, rp) {
+/**
+ * The keyed seal of one stored grant: HMAC-SHA256 under this install's secret (see createGrantBook) over its id, project, folder, setting, value,
+ * hash and scope. The hash alone is public arithmetic; only this seal says the bridge itself wrote the entry after the person approved.
+ */
+function macOf(key, g) {
+    const n = g.normalized;
+    return crypto.createHmac("sha256", key).update(JSON.stringify(["settingGrant/2", g.id, g.projectId, g.folderId, n?.setting, n?.value, g.hash, g.scope])).digest("hex");
+}
+/** One stored entry, checked again from nothing: its shape, seal, scope, project, setting, value and hash. Null drops it. */
+function recheck(g, project, key, rp) {
+    if (!Buffer.isBuffer(key) || key.length !== 32)
+        return null; // no secret, no valid seal
     if (!g || typeof g !== "object")
         return null;
     const e = g;
@@ -764,6 +805,8 @@ function recheck(g, project, rp) {
     const n = e.normalized;
     if (!n || typeof n !== "object" || typeof e.hash !== "string")
         return null;
+    if (typeof e.mac !== "string" || !eq(macOf(key, e), e.mac))
+        return null; // written by hand, by another install, or changed since
     const v = validateSetting(n.setting, n.value, project, rp);
     if (!v.ok)
         return null; // unknown, on the never-list, outside the project, not in the catalog
@@ -775,10 +818,10 @@ function recheck(g, project, rp) {
  * The settings a turn runs with: `base` plus every stored grant that still passes. Pure: `base` is not changed. A grant that is unknown, tampered
  * with, on the never-list or from another project is dropped, so an item taken out of ALLOWED by a bridge upgrade stops applying at once.
  */
-function applyGrants(base, grants, mode, project, rp = fs.realpathSync) {
+function applyGrants(base, grants, mode, project, key, rp = defaultRp) {
     const out = structuredClone(base);
     for (const g of Array.isArray(grants) ? grants : []) {
-        const n = recheck(g, project, rp);
+        const n = recheck(g, project, key, rp);
         if (n)
             mergeGrant(out, n, mode);
     }
@@ -786,6 +829,8 @@ function applyGrants(base, grants, mode, project, rp = fs.realpathSync) {
 }
 /** The folder that holds every project's grants. A code turn may neither read nor write it (denyWrite and denyRead). */
 const storeFolder = (stateDir) => path.join(stateDir, "projects");
+/** The install's secret for sealing grants: 32 random bytes in the store folder (mode 0600), beside the grants and so under the same denyRead and denyWrite. Not a project name, so no project can own it. */
+const SECRET_FILE = ".grant-secret";
 const eq = (a, b) => {
     const h = (s) => crypto.createHash("sha256").update(s).digest();
     return crypto.timingSafeEqual(h(a), h(b));
@@ -793,10 +838,41 @@ const eq = (a, b) => {
 /** The grant store and the pending requests of one bridge. Reads the file afresh on every call: nothing is cached, so a removed grant is gone at once. */
 function createGrantBook(o) {
     const now = o.now ?? (() => new Date());
-    const rp = o.realpath ?? fs.realpathSync;
+    const rp = o.realpath ?? defaultRp;
     const log = o.log ?? (() => { });
     // At most ONE pending request per project (a flood must not wear the person down); in memory only, so a restart clears them.
     const pending = new Map();
+    // How many request_setting calls each running turn has made (refused ones too); a turn's count is dropped when the turn ends.
+    const calls = new Map();
+    const secretFile = path.join(storeFolder(o.stateDir), SECRET_FILE);
+    /** The install's secret, or null if there is none yet or the file is not 32 bytes (then no entry can verify). Read afresh each time. */
+    function readKey() {
+        try {
+            const b = fs.readFileSync(secretFile);
+            return b.length === 32 ? b : null;
+        }
+        catch {
+            return null;
+        }
+    }
+    /** The secret, made once (random, 0600) when the first grant is saved. A file of the wrong size is replaced: what it sealed is gone. */
+    function keyForSaving() {
+        const have = readKey();
+        if (have)
+            return have;
+        fs.mkdirSync(path.dirname(secretFile), { recursive: true, mode: 0o700 });
+        fs.rmSync(secretFile, { force: true });
+        const k = crypto.randomBytes(32);
+        fs.writeFileSync(secretFile, k, { mode: 0o600, flag: "wx" });
+        return k;
+    }
+    /** Drops a request that has waited too long. */
+    function sweep() {
+        const t = now().getTime();
+        for (const [k, p] of pending)
+            if (!(t - Date.parse(p.createdAt) <= PENDING_MS))
+                pending.delete(k);
+    }
     /** The store file of a project, or null for an id that is not a plain project name (`..`, a slash, a long name). */
     function fileFor(projectId) {
         if (typeof projectId !== "string" || !PROJECT_ID_RE.test(projectId))
@@ -831,39 +907,60 @@ function createGrantBook(o) {
         grantsFor(project) {
             return readAll(project.id);
         },
+        /** The secret that seals this install's grants, for applyGrants; null until the first grant is saved. */
+        key() {
+            return readKey();
+        },
         /** Grants of one project as the app shows them: only entries that pass the check now (a dropped one is not shown as active). */
         listGrants(project) {
-            return readAll(project.id).filter((g) => recheck(g, project, rp) !== null);
+            const key = readKey();
+            return readAll(project.id).filter((g) => recheck(g, project, key, rp) !== null);
         },
         /** The request tool: validates, then keeps the request pending. It can neither grant nor write the store. */
         request(project, req, turnId) {
+            // The cap comes first and costs nothing: past it a turn gets the same refusal with no checking and no disk work.
+            const made = (calls.get(turnId) ?? 0) + 1;
+            if (calls.size >= 1000 && !calls.has(turnId))
+                calls.delete(calls.keys().next().value);
+            calls.set(turnId, made);
+            if (made > MAX_CALLS_PER_TURN)
+                return { status: "refused", reason: `too many setting requests in this turn (at most ${MAX_CALLS_PER_TURN}). Stop this turn and say what is blocked.`, allowed: ALLOWED_LIST };
             const v = validateRequest(req, project, rp);
             if (!v.ok)
                 return { status: "refused", reason: v.reason, allowed: ALLOWED_LIST };
             const reason = cleanReason(req.reason);
+            sweep();
             const have = pending.get(project.id);
             if (have) {
-                // The same request again is merged into the one that waits; a different one waits its turn.
-                if (have.hash === v.hash)
+                // The same request again is merged into the one that waits (and is the running turn's now); a different one waits its turn,
+                // unless the turn that made the waiting one is over: then the slot is free and the old card finds nothing.
+                if (have.hash === v.hash) {
+                    have.turnEnded = false;
+                    have.turnId = turnId;
                     return { status: "pending", requestId: have.requestId, merged: true };
-                return { status: "refused", reason: "Another request for this project is already waiting for the person's approval. Stop this turn and say what is blocked.", allowed: ALLOWED_LIST };
+                }
+                if (!have.turnEnded)
+                    return { status: "refused", reason: "Another request for this project is already waiting for the person's approval. Stop this turn and say what is blocked.", allowed: ALLOWED_LIST };
+                pending.delete(project.id);
             }
             if (readAll(project.id).length >= MAX_GRANTS_PER_PROJECT)
                 return { status: "refused", reason: "This project already has the most grants it can hold.", allowed: ALLOWED_LIST };
             const p = {
                 requestId: crypto.randomBytes(12).toString("hex"), nonce: crypto.randomBytes(16).toString("hex"), hash: v.hash, reason, turnId,
-                createdAt: now().toISOString(), project, normalized: v.normalized,
+                createdAt: now().toISOString(), project, normalized: v.normalized, turnEnded: false,
             };
             pending.set(project.id, p);
             return { status: "pending", requestId: p.requestId, merged: false };
         },
         /** What the app shows on a card: the exact setting and value, the reason, and the nonce and hash it must send back. */
         listRequests(projectId) {
+            sweep();
             const p = pending.get(projectId);
             return p ? [p] : [];
         },
         /** The person's approval. Needs the nonce and the hash of the pending request; works once. A refusal leaves the request pending. */
         grant(requestId, nonce, hash, by) {
+            sweep();
             const p = [...pending.values()].find((x) => typeof requestId === "string" && eq(x.requestId, requestId));
             if (!p)
                 return { ok: false, status: 404, error: "No such pending request." };
@@ -872,10 +969,11 @@ function createGrantBook(o) {
             if (typeof hash !== "string" || !eq(p.hash, hash))
                 return { ok: false, status: 409, error: "The request is not the one that was shown." };
             const g = {
-                id: crypto.randomBytes(12).toString("hex"), projectId: p.project.id, folderId: p.project.folderId, normalized: p.normalized, hash: p.hash,
+                id: crypto.randomBytes(12).toString("hex"), projectId: p.project.id, folderId: p.project.folderId, normalized: p.normalized, hash: p.hash, mac: "",
                 grantedAt: now().toISOString(), grantedBy: by.slice(0, 16), bridgeVersion: o.bridgeVersion, scope: GRANT_SCOPE,
             };
             try {
+                g.mac = macOf(keyForSaving(), g);
                 const rest = readAll(p.project.id).filter((e) => e?.hash !== p.hash);
                 writeAll(p.project.id, [...rest, g]);
             }
@@ -888,12 +986,20 @@ function createGrantBook(o) {
         },
         /** The person's "no": drops the pending request so a new one can be made. */
         decline(requestId) {
+            sweep();
             for (const [k, p] of pending)
                 if (typeof requestId === "string" && eq(p.requestId, requestId)) {
                     pending.delete(k);
                     return true;
                 }
             return false;
+        },
+        /** The turn is over: its call count is dropped, and a request it made is marked so (the person may still answer it; another turn's different request may take the slot). */
+        endTurn(turnId) {
+            calls.delete(turnId);
+            for (const p of pending.values())
+                if (p.turnId === turnId)
+                    p.turnEnded = true;
         },
         /** Removes one grant by id from whichever project holds it. The next turn is built without it. */
         revoke(grantId) {
@@ -925,10 +1031,10 @@ function createGrantBook(o) {
     };
 }
 
-return { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting };
+return { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, macOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting };
 })();
 // Setting grants (0.4.1): the allow-list and its checks are exported so the tests (and the app's tooling) use the very code the bridge runs.
-export { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting };
+export { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, macOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting };
 export const WEB_SCOPES = ["once", "turn"];
 /** A count the page may be shown: a finite integer from 0 to 1e9. Anything else is left out. */
 const USAGE_MAX = 1_000_000_000;
@@ -4062,12 +4168,25 @@ export function createBridge(opts = {}) {
     /** The folders that hold the grants, as the path is written and as the disk resolves it. Denied for write (and read) in both sandbox modes. */
     const grantStoreDeny = opts.stateDir ? [...new Set([storeFolder(path.resolve(opts.stateDir)), storeFolder(resolveThroughLinks(path.resolve(opts.stateDir)))])] : [];
     const projectRefOf = (t) => (t.proj ? { id: t.proj.name, folderId: t.proj.id, root: t.proj.path } : null);
+    /**
+     * Why setting grants are off, or "": the state folder is inside the code folder (or ~/Developer), where a code turn can write, so the store could not be
+     * kept away from it. Asked again only when the code folder changes (the answer follows links on disk).
+     */
+    let grantsOffFor = null;
+    const grantsOff = () => {
+        if (!opts.stateDir)
+            return "";
+        const ws = workspace?.path ?? "";
+        if (!grantsOffFor || grantsOffFor.ws !== ws)
+            grantsOffFor = { ws, why: stateDirProblem(path.resolve(opts.stateDir), ws || undefined, home, platform) };
+        return grantsOffFor.why;
+    };
     /** Does this turn get the request tool? A top code turn inside a project, running inside the OS sandbox. */
-    const settingTurn = (t) => grantBook !== null && t.code && !t.parent && t.proj !== null && (t.computer ? sandboxedTurn(t) : !t.filesOnly && codePlatform !== "win32");
+    const settingTurn = (t) => grantBook !== null && grantsOff() === "" && t.code && !t.parent && t.proj !== null && (t.computer ? sandboxedTurn(t) : !t.filesOnly && codePlatform !== "win32");
     /** The turn's settings with this project's grants applied (read afresh from disk, every one checked again). */
     const withGrants = (t, base, mode) => {
         const ref = projectRefOf(t);
-        return grantBook && ref ? applyGrants(base, grantBook.grantsFor(ref), mode, ref) : base;
+        return grantBook && ref && grantsOff() === "" ? applyGrants(base, grantBook.grantsFor(ref), mode, ref, grantBook.key()) : base;
     };
     const protectOpts = (t) => ({ home, places: [...new Set([...protectedPlaces(home, protectedExtra), ...credentialPlaces(home, codePlatform, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")])], base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
     /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
@@ -6097,6 +6216,7 @@ export function createBridge(opts = {}) {
             for (const p of turn.pending.values())
                 p.reject(new Error("The turn ended."));
             turn.pending.clear();
+            grantBook?.endTurn(turn.id); // its request_setting count is dropped; a request it made says "turn ended"
             turns.delete(turn.id);
         };
         res.on("close", () => {
@@ -6289,6 +6409,9 @@ export function createBridge(opts = {}) {
     async function handleSettings(req, res, route) {
         if (!grantBook)
             return json(res, 409, { error: "This bridge has no state folder, so it cannot keep setting grants.", code: "NoStateFolder" });
+        const off = grantsOff();
+        if (off)
+            return json(res, 409, { error: `Setting grants are off: ${off}`, code: "StateFolderInsideCode" });
         let body;
         try {
             body = await readBody(req);
@@ -6306,7 +6429,7 @@ export function createBridge(opts = {}) {
             if (!ref)
                 return json(res, 400, { error: NO_SUCH_PROJECT });
             // The card needs the exact value, the reason, and the nonce and hash it sends back with its click.
-            return json(res, 200, { requests: grantBook.listRequests(ref.id).map((r) => ({ requestId: r.requestId, nonce: r.nonce, hash: r.hash, setting: r.normalized.setting, value: r.normalized.value, reason: r.reason, createdAt: r.createdAt, project: r.project.id })) });
+            return json(res, 200, { requests: grantBook.listRequests(ref.id).map((r) => ({ requestId: r.requestId, nonce: r.nonce, hash: r.hash, setting: r.normalized.setting, value: r.normalized.value, reason: r.reason, createdAt: r.createdAt, project: r.project.id, turnEnded: r.turnEnded })) });
         }
         if (route === "/v1/settings/grants") {
             const ref = project();
@@ -7376,6 +7499,9 @@ export function createBridge(opts = {}) {
             return accessSource;
         },
         async start() {
+            const off = grantsOff();
+            if (off)
+                log(`Setting grants are off: ${off}`);
             fs.mkdirSync(workDir, { recursive: true, mode: 0o700 });
             await takeLock(); // one bridge per state folder: a second refuses here
             sweepSnapshots(); // the lock is ours, so no other bridge's snapshots are here

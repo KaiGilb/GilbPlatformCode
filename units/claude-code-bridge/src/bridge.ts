@@ -46,10 +46,10 @@ import type { AddressInfo } from "node:net";
 import type { ChildProcess, ExecFileException } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { extractTimeLines } from "@kaigilb/gilbplatformcode-time-line";
-import { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting } from "./settingGrants.js";
+import { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, macOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting } from "./settingGrants.js";
 import type { ProjectRef } from "./settingGrants.js";
 // Setting grants (0.4.1): the allow-list and its checks are exported so the tests (and the app's tooling) use the very code the bridge runs.
-export { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting };
+export { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, macOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting };
 
 /** What the code reads from a caught error (Node errors carry `code`; our own body errors carry `status`). */
 type ErrLike = { code?: string; message?: string; status?: number };
@@ -3178,12 +3178,23 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** The folders that hold the grants, as the path is written and as the disk resolves it. Denied for write (and read) in both sandbox modes. */
   const grantStoreDeny: string[] = opts.stateDir ? [...new Set([storeFolder(path.resolve(opts.stateDir)), storeFolder(resolveThroughLinks(path.resolve(opts.stateDir)))])] : [];
   const projectRefOf = (t: Turn): ProjectRef | null => (t.proj ? { id: t.proj.name, folderId: t.proj.id, root: t.proj.path } : null);
+  /**
+   * Why setting grants are off, or "": the state folder is inside the code folder (or ~/Developer), where a code turn can write, so the store could not be
+   * kept away from it. Asked again only when the code folder changes (the answer follows links on disk).
+   */
+  let grantsOffFor: { ws: string; why: string } | null = null;
+  const grantsOff = (): string => {
+    if (!opts.stateDir) return "";
+    const ws = workspace?.path ?? "";
+    if (!grantsOffFor || grantsOffFor.ws !== ws) grantsOffFor = { ws, why: stateDirProblem(path.resolve(opts.stateDir), ws || undefined, home, platform) };
+    return grantsOffFor.why;
+  };
   /** Does this turn get the request tool? A top code turn inside a project, running inside the OS sandbox. */
-  const settingTurn = (t: Turn): boolean => grantBook !== null && t.code && !t.parent && t.proj !== null && (t.computer ? sandboxedTurn(t) : !t.filesOnly && codePlatform !== "win32");
+  const settingTurn = (t: Turn): boolean => grantBook !== null && grantsOff() === "" && t.code && !t.parent && t.proj !== null && (t.computer ? sandboxedTurn(t) : !t.filesOnly && codePlatform !== "win32");
   /** The turn's settings with this project's grants applied (read afresh from disk, every one checked again). */
   const withGrants = <T extends Record<string, any>>(t: Turn, base: T, mode: "folder" | "computer"): T => {
     const ref = projectRefOf(t);
-    return grantBook && ref ? applyGrants(base, grantBook.grantsFor(ref), mode, ref) : base;
+    return grantBook && ref && grantsOff() === "" ? applyGrants(base, grantBook.grantsFor(ref), mode, ref, grantBook.key()) : base;
   };
   const protectOpts = (t: Turn): ProtectOpts => ({ home, places: [...new Set([...protectedPlaces(home, protectedExtra), ...credentialPlaces(home, codePlatform, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")])], base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
   /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
@@ -4938,6 +4949,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       for (const a of [...turn.approvals.values()]) a.settle(false, "The person did not answer."); // the page left the turn: deny what still waits
       for (const p of turn.pending.values()) p.reject(new Error("The turn ended."));
       turn.pending.clear();
+      grantBook?.endTurn(turn.id); // its request_setting count is dropped; a request it made says "turn ended"
       turns.delete(turn.id);
     };
     res.on("close", () => {
@@ -5109,6 +5121,8 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** POST /v1/settings/{requests,grant,decline,grants,revoke}. The bridge's own part of the approval: it holds the pending request, the nonce and the hash. */
   async function handleSettings(req: IncomingMessage, res: ServerResponse, route: string) {
     if (!grantBook) return json(res, 409, { error: "This bridge has no state folder, so it cannot keep setting grants.", code: "NoStateFolder" });
+    const off = grantsOff();
+    if (off) return json(res, 409, { error: `Setting grants are off: ${off}`, code: "StateFolderInsideCode" });
     let body: Record<string, unknown>;
     try {
       body = await readBody(req);
@@ -5124,7 +5138,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       const ref = project();
       if (!ref) return json(res, 400, { error: NO_SUCH_PROJECT });
       // The card needs the exact value, the reason, and the nonce and hash it sends back with its click.
-      return json(res, 200, { requests: grantBook.listRequests(ref.id).map((r) => ({ requestId: r.requestId, nonce: r.nonce, hash: r.hash, setting: r.normalized.setting, value: r.normalized.value, reason: r.reason, createdAt: r.createdAt, project: r.project.id })) });
+      return json(res, 200, { requests: grantBook.listRequests(ref.id).map((r) => ({ requestId: r.requestId, nonce: r.nonce, hash: r.hash, setting: r.normalized.setting, value: r.normalized.value, reason: r.reason, createdAt: r.createdAt, project: r.project.id, turnEnded: r.turnEnded })) });
     }
     if (route === "/v1/settings/grants") {
       const ref = project();
@@ -5995,6 +6009,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       return accessSource;
     },
     async start() {
+      const off = grantsOff();
+      if (off) log(`Setting grants are off: ${off}`);
       fs.mkdirSync(workDir, { recursive: true, mode: 0o700 });
       await takeLock(); // one bridge per state folder: a second refuses here
       sweepSnapshots(); // the lock is ours, so no other bridge's snapshots are here

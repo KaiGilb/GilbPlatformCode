@@ -131,7 +131,7 @@ describe.each(MODULES)("T1 validateRequest (%s)", (_name, M) => {
     const p = world();
     expect(M.validateRequest({ setting: LB, value: true }, p).ok).toBe(false);
     expect(M.validateRequest(req(LB, true, ""), p).ok).toBe(false);
-    expect(M.validateRequest(req(LB, true, "x".repeat(301)), p).ok).toBe(false);
+    expect(M.validateRequest(req(LB, true, "x".repeat(501)), p).ok).toBe(false);
     expect(M.validateRequest({ ...req(LB, true), approve: true }, p).ok).toBe(false);
     expect(M.validateRequest({ ...req(LB, true), nonce: "x" }, p).ok).toBe(false);
     for (const bad of [null, undefined, "x", 5, []]) expect(M.validateRequest(bad, p).ok).toBe(false);
@@ -142,8 +142,13 @@ describe.each(MODULES)("T1 validateRequest (%s)", (_name, M) => {
 function grantOf(M, p, setting, value, over = {}) {
   const v = M.validateSetting(setting, value, p);
   if (!v.ok) throw new Error(v.reason);
-  return { id: "a".repeat(24), projectId: p.id, folderId: p.folderId, normalized: v.normalized, hash: v.hash, grantedAt: "2026-11-28T00:00:00.000Z", grantedBy: "abc", bridgeVersion: "0.4.1", scope: "project-until-removed", ...over };
+  const g = { id: "a".repeat(24), projectId: p.id, folderId: p.folderId, normalized: v.normalized, hash: v.hash, grantedAt: "2026-11-28T00:00:00.000Z", grantedBy: "abc", bridgeVersion: "0.4.1", scope: "project-until-removed", ...over };
+  return { ...g, mac: M.macOf(TEST_KEY, g) };
 }
+// This install's secret for the pure checks, and the entry sealed with it (a changed entry is sealed again: the inner checks must still refuse it).
+const TEST_KEY = Buffer.alloc(32, 1);
+const apply = (M, base, grants, mode, p) => M.applyGrants(base, grants, mode, p, TEST_KEY);
+const reseal = (M, g) => (g && typeof g === "object" ? { ...g, mac: M.macOf(TEST_KEY, g) } : g);
 // Built once (the computer one walks many paths) and cloned for each use.
 let folderCache, computerCache;
 const folderBase = () => structuredClone((folderCache ??= codeTurnSettings("/home/x", "darwin", [], "session", "", false, ["/state/projects"])));
@@ -156,14 +161,14 @@ describe.each(MODULES)("T2 applyGrants (%s)", (_name, M) => {
     const base = folderBase();
     base.sandbox.network.allowLocalBinding = false;
     const before = JSON.stringify(base);
-    const out = M.applyGrants(base, [grantOf(M, p, LB, true), grantOf(M, p, US, "run/app.sock", { id: "b".repeat(24) }), grantOf(M, p, AD, "github.com", { id: "c".repeat(24) })], "folder", p);
+    const out = apply(M, base, [grantOf(M, p, LB, true), grantOf(M, p, US, "run/app.sock", { id: "b".repeat(24) }), grantOf(M, p, AD, "github.com", { id: "c".repeat(24) })], "folder", p);
     expect(out.sandbox.network.allowLocalBinding).toBe(true);
     expect(out.sandbox.network.allowUnixSockets).toEqual([path.join(p.root, "run", "app.sock")]);
     expect(out.sandbox.network.allowedDomains).toContain("github.com");
     expect(out.sandbox.network.allowedDomains).toContain("registry.npmjs.org");
     expect(JSON.stringify(base)).toBe(before); // pure
     // only what is new: a second run adds nothing twice, and a domain the turn already has is not listed again
-    const twice = M.applyGrants(out, [grantOf(M, p, AD, "github.com"), grantOf(M, p, AD, "pypi.org", { id: "d".repeat(24) })], "folder", p);
+    const twice = apply(M, out, [grantOf(M, p, AD, "github.com"), grantOf(M, p, AD, "pypi.org", { id: "d".repeat(24) })], "folder", p);
     expect(twice.sandbox.network.allowedDomains.filter((d) => d === "github.com")).toHaveLength(1);
     expect(twice.sandbox.network.allowedDomains.filter((d) => d === "pypi.org")).toHaveLength(1);
   });
@@ -171,7 +176,7 @@ describe.each(MODULES)("T2 applyGrants (%s)", (_name, M) => {
   // Spec: Unblock.HandEdits
   it("adds them in computer mode too (a host is not listed next to the existing *)", () => {
     const p = world();
-    const out = M.applyGrants(computerBase(), [grantOf(M, p, LB, true), grantOf(M, p, US, "app.sock", { id: "b".repeat(24) }), grantOf(M, p, AD, "github.com", { id: "c".repeat(24) })], "computer", p);
+    const out = apply(M, computerBase(), [grantOf(M, p, LB, true), grantOf(M, p, US, "app.sock", { id: "b".repeat(24) }), grantOf(M, p, AD, "github.com", { id: "c".repeat(24) })], "computer", p);
     expect(out.sandbox.network.allowLocalBinding).toBe(true);
     expect(out.sandbox.network.allowUnixSockets).toEqual([path.join(p.root, "app.sock")]);
     expect(out.sandbox.network.allowedDomains).toEqual(["*"]);
@@ -182,7 +187,7 @@ describe.each(MODULES)("T2 applyGrants (%s)", (_name, M) => {
   it("A3: drops a tampered entry, an unknown setting, a never-list entry, another project's entry and anything malformed", () => {
     const p = world();
     const good = grantOf(M, p, AD, "github.com");
-    const evil = (g) => ({ ...g, id: "e".repeat(24) });
+    const evil = (g) => reseal(M, { ...g, id: "e".repeat(24) });
     const hashFor = (s, v) => M.hashOf(p, { setting: s, value: v });
     const bad = [
       evil({ ...good, normalized: { setting: AD, value: "pypi.org" } }), // value changed by hand, old hash
@@ -204,12 +209,12 @@ describe.each(MODULES)("T2 applyGrants (%s)", (_name, M) => {
     ];
     for (const mode of ["folder", "computer"]) {
       const base = mode === "folder" ? folderBase() : computerBase();
-      const out = M.applyGrants(base, bad, mode, p);
+      const out = apply(M, base, bad, mode, p);
       expect(out, mode).toEqual(base);
     }
     // the good one still applies among the bad ones
-    expect(M.applyGrants(folderBase(), [...bad, good], "folder", p).sandbox.network.allowedDomains).toContain("github.com");
-    expect(M.applyGrants(folderBase(), "not an array", "folder", p)).toEqual(folderBase());
+    expect(apply(M, folderBase(), [...bad, good], "folder", p).sandbox.network.allowedDomains).toContain("github.com");
+    expect(apply(M, folderBase(), "not an array", "folder", p)).toEqual(folderBase());
   });
 
   // Spec: Unblock.HandEdits
@@ -218,10 +223,10 @@ describe.each(MODULES)("T2 applyGrants (%s)", (_name, M) => {
     fs.writeFileSync(path.join(p.root, "run", "a.sock"), "");
     fs.symlinkSync(path.join(p.root, "run", "a.sock"), path.join(p.root, "alias.sock"));
     const g = grantOf(M, p, US, "alias.sock");
-    expect(M.applyGrants(folderBase(), [g], "folder", p).sandbox.network.allowUnixSockets).toEqual([path.join(p.root, "run", "a.sock")]);
+    expect(apply(M, folderBase(), [g], "folder", p).sandbox.network.allowUnixSockets).toEqual([path.join(p.root, "run", "a.sock")]);
     fs.rmSync(path.join(p.root, "run"), { recursive: true });
     fs.symlinkSync(path.join(tmp, "outside"), path.join(p.root, "run")); // the folder is swapped for a link out of the project
-    expect(M.applyGrants(folderBase(), [g], "folder", p)).toEqual(folderBase());
+    expect(apply(M, folderBase(), [g], "folder", p)).toEqual(folderBase());
   });
 
   // Spec: Unblock.HandEdits
@@ -234,15 +239,15 @@ describe.each(MODULES)("T2 applyGrants (%s)", (_name, M) => {
     expect(out).toEqual(base);
     expect(out.sandbox.network.allowedDomains).not.toContain("*");
     // and through applyGrants, with a correctly hashed entry
-    const g = { ...grantOf(M, p, AD, "github.com"), normalized: { setting: AD, value: "*" }, hash: M.hashOf(p, { setting: AD, value: "*" }) };
-    expect(M.applyGrants(base, [g], "folder", p).sandbox.network.allowedDomains).not.toContain("*");
+    const g = reseal(M, { ...grantOf(M, p, AD, "github.com"), normalized: { setting: AD, value: "*" }, hash: M.hashOf(p, { setting: AD, value: "*" }) });
+    expect(apply(M, base, [g], "folder", p).sandbox.network.allowedDomains).not.toContain("*");
   });
 
   // Spec: Unblock.HandEdits
   it("no settings block (Windows files-only): nothing is added and nothing breaks", () => {
     const p = world();
     const win = codeTurnSettings("C:\\Users\\x", "win32");
-    expect(M.applyGrants(win, [grantOf(M, p, AD, "github.com")], "folder", p)).toEqual(win);
+    expect(apply(M, win, [grantOf(M, p, AD, "github.com")], "folder", p)).toEqual(win);
   });
 
   // Spec: Unblock.Safe (Kai, 2026-11-28: a grant lasts until it is removed)
@@ -252,7 +257,7 @@ describe.each(MODULES)("T2 applyGrants (%s)", (_name, M) => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(new Date("2046-01-01T00:00:00Z"));
-      expect(M.applyGrants(folderBase(), [old], "folder", p).sandbox.network.allowedDomains).toContain("github.com");
+      expect(apply(M, folderBase(), [old], "folder", p).sandbox.network.allowedDomains).toContain("github.com");
     } finally {
       vi.useRealTimers();
     }
@@ -268,10 +273,10 @@ describe("T7 parity: src/settingGrants.ts and the copy built into bridge.mjs", (
     const asks = [[LB, true], [LB, false], [US, "run/a.sock"], [US, "link.sock"], [US, "/var/run/docker.sock"], [AD, "github.com"], [AD, "GitHub.com."], [AD, "*"], ["sandbox.enabled", false], ["hooks", {}], ["x", 1]];
     for (const [s, v] of asks) expect(BUILT.validateRequest(req(s, v), p), `${s}=${v}`).toEqual(SRC.validateRequest(req(s, v), p));
     const grants = [grantOf(SRC, p, LB, true), grantOf(SRC, p, US, "run/a.sock", { id: "b".repeat(24) }), grantOf(SRC, p, AD, "github.com", { id: "c".repeat(24) }), grantOf(SRC, p, AD, "pypi.org", { id: "d".repeat(24) }),
-      { ...grantOf(SRC, p, AD, "crates.io"), hash: "0".repeat(64) }, { ...grantOf(SRC, p, AD, "crates.io"), projectId: "p9" }, null];
+      reseal(SRC, { ...grantOf(SRC, p, AD, "crates.io"), hash: "0".repeat(64) }), reseal(SRC, { ...grantOf(SRC, p, AD, "crates.io"), projectId: "p9" }), null];
     for (const mode of ["folder", "computer"]) {
       const base = mode === "folder" ? folderBase() : computerBase();
-      expect(BUILT.applyGrants(base, grants, mode, p), mode).toEqual(SRC.applyGrants(base, grants, mode, p));
+      expect(apply(BUILT, base, grants, mode, p), mode).toEqual(apply(SRC, base, grants, mode, p));
     }
     expect(BUILT.DOMAIN_CATALOG).toEqual(SRC.DOMAIN_CATALOG);
     expect(BUILT.ALLOWED).toEqual(SRC.ALLOWED);
@@ -606,5 +611,255 @@ describe("what the next turn is built with", () => {
     const again = await start(); // and the removal survives a restart too
     await turn(again, { prompt: "hello" });
     expect(lastSettings().sandbox.network.allowedDomains).not.toContain("github.com");
+  });
+});
+
+// --- fix batch 1b (hacker round 1): F1 case, F2 bounds, F3 keyed grants, F4 pending lifetime, F5 reason text, F7 state folder ------------------------
+const countingRp = () => {
+  const calls = [];
+  const f = (p) => { calls.push(p); return fs.realpathSync(p); };
+  f.calls = calls;
+  return f;
+};
+const bookOf = (M, over = {}) => {
+  const sd = path.join(tmp, "state");
+  fs.mkdirSync(sd, { recursive: true });
+  return M.createGrantBook({ stateDir: sd, bridgeVersion: "test", ...over });
+};
+
+describe.each(MODULES)("F1 the .claude never-list ignores case (%s)", (_name, M) => {
+  // Spec: Unblock.Safe
+  it(".Claude/x.sock, .CLAUDE/x.sock, .Claude.json and .cLaUdE/../.claude/x.sock are all refused", () => {
+    const p = world();
+    for (const v of [".Claude/x.sock", ".CLAUDE/x.sock", ".Claude.json", ".CLAUDE.JSON", ".cLaUdE/../.claude/x.sock", "run/.Claude/a.sock", "run\\.CLAUDE\\a.sock", path.join(p.root, ".Claude", "x.sock")]) {
+      const r = M.validateRequest(req(US, v), p);
+      expect(r.ok, v).toBe(false);
+      expect(r.reason, v).toMatch(/\.claude/);
+    }
+    expect(M.neverReason(US, ".CLAUDE/x.sock")).toMatch(/\.claude/);
+    expect(M.neverReason(US, "x/.Claude.json")).toMatch(/\.claude/);
+    expect(M.neverReason(US, "toclaude/x.sock")).toBeNull(); // only the exact name, in any case
+  });
+});
+
+describe.each(MODULES)("F2 a request is bounded before any disk work (%s)", (_name, M) => {
+  // Spec: Unblock.Safe
+  it("a 513-character value is refused before any realpath", () => {
+    const p = world();
+    const rp = countingRp();
+    const r = M.validateRequest(req(US, "a".repeat(513)), p, rp);
+    expect(r.ok).toBe(false);
+    expect(rp.calls).toHaveLength(0);
+    const edge = M.validateRequest(req(US, "d/".repeat(10) + "a".repeat(100)), p, countingRp());
+    expect(edge.ok).toBe(true); // under the cap it still works
+  });
+
+  // Spec: Unblock.Safe
+  it("a 33-segment socket path is refused before any realpath; 32 segments still work", () => {
+    const p = world();
+    const rp = countingRp();
+    const r = M.validateRequest(req(US, [...Array(32).fill("d"), "x.sock"].join("/")), p, rp);
+    expect(r.ok).toBe(false);
+    expect(rp.calls).toHaveLength(0);
+    const rp2 = countingRp();
+    const ok = M.validateRequest(req(US, [...Array(31).fill("d"), "x.sock"].join("/")), p, rp2);
+    expect(ok.ok).toBe(true);
+    expect(rp2.calls.length).toBeGreaterThan(0);
+  });
+
+  // Spec: Unblock.Safe
+  it("the resolution of a path takes a bounded number of steps", () => {
+    const p = world();
+    let n = 0;
+    const rp = () => { n++; throw Object.assign(new Error("nope"), { code: "ENOENT" }); };
+    M.validateRequest(req(US, [...Array(31).fill("d"), "x.sock"].join("/")), p, rp);
+    expect(n).toBeLessThanOrEqual(140);
+  });
+
+  // Spec: Unblock.Safe
+  it("after 20 calls in one turn every further call is refused without any checking; a new turn starts again", () => {
+    const p = world();
+    const rp = countingRp();
+    const book = bookOf(M, { realpath: rp });
+    for (let i = 0; i < 20; i++) book.request(p, req(US, `run/s${i}.sock`), "t1");
+    const before = rp.calls.length;
+    expect(before).toBeGreaterThan(0);
+    const r = book.request(p, req(US, "run/s99.sock"), "t1");
+    expect(r).toMatchObject({ status: "refused" });
+    expect(r.reason).toMatch(/too many setting requests in this turn/);
+    expect(rp.calls.length).toBe(before); // no validation, no disk work
+    expect(book.request(p, req(LB, true), "t1").reason).toMatch(/too many setting requests in this turn/);
+    expect(book.request(p, req(LB, true), "t2").reason).toMatch(/already waiting/); // another turn is counted on its own
+  });
+});
+
+describe.each(MODULES)("F5 the reason text (%s)", (_name, M) => {
+  const shown = (book, p, reason) => {
+    const r = book.request(p, req(LB, true, reason), "t1");
+    const first = book.listRequests(p.id)[0];
+    const out = r.status === "pending" ? first.reason : null;
+    if (first) book.decline(first.requestId);
+    return out;
+  };
+  // Spec: Unblock.Safe
+  it("bidi controls, zero-width, C1, U+2028/9 and C0 never reach the card", () => {
+    const p = world();
+    const book = bookOf(M);
+    expect(shown(book, p, "pay‮no‪one‫x‬y‭z")).toBe("paynoonexyz");
+    expect(shown(book, p, "a⁦b⁧c⁨d⁩e")).toBe("abcde");
+    expect(shown(book, p, "a​b‌c‍d﻿e")).toBe("abcde");
+    expect(shown(book, p, "a\u0085b\u0080c\u009Fd")).toBe("a b c d");
+    expect(shown(book, p, "a b c")).toBe("a b c");
+    expect(shown(book, p, "a\nb\rc\u0000d\u007fe")).toBe("a b c d e");
+  });
+  // Spec: Unblock.Safe
+  it("the reason is capped at 500 characters", () => {
+    const p = world();
+    const book = bookOf(M);
+    expect(shown(book, p, "x".repeat(500))).toHaveLength(500);
+    expect(book.request(p, req(LB, true, "x".repeat(501)), "t1").status).toBe("refused");
+    expect(M.validateRequest(req(LB, true, "x".repeat(501)), p).ok).toBe(false);
+  });
+});
+
+describe.each(MODULES)("F3 stored grants carry a keyed MAC (%s)", (_name, M) => {
+  // Spec: Unblock.HandEdits
+  it("an entry with a plain sha256 hash and no MAC is dropped; one signed with this install's key applies; another install's key does not", () => {
+    const p = world();
+    const book = bookOf(M);
+    const r = book.request(p, req(AD, "github.com"), "t1");
+    expect(r.status).toBe("pending");
+    const pend = book.listRequests(p.id)[0];
+    const g = book.grant(pend.requestId, pend.nonce, pend.hash, "abc");
+    expect(g.ok).toBe(true);
+    const key = book.key();
+    expect(Buffer.isBuffer(key) && key.length === 32).toBe(true);
+    expect(M.applyGrants(folderBase(), book.grantsFor(p), "folder", p, key).sandbox.network.allowedDomains).toContain("github.com");
+    // as at 7b4bdae1: the right sha256, no MAC
+    const old = { ...g.grant };
+    delete old.mac;
+    expect(M.applyGrants(folderBase(), [old], "folder", p, key)).toEqual(folderBase());
+    expect(M.applyGrants(folderBase(), [{ ...old, mac: "0".repeat(64) }], "folder", p, key)).toEqual(folderBase());
+    // another install's secret
+    expect(M.applyGrants(folderBase(), [g.grant], "folder", p, Buffer.alloc(32, 7))).toEqual(folderBase());
+    // the key file is private
+    const files = fs.readdirSync(path.join(tmp, "state", "projects"), { withFileTypes: true }).filter((e) => e.isFile());
+    expect(files).toHaveLength(1);
+    expect(fs.statSync(path.join(tmp, "state", "projects", files[0].name)).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe.each(MODULES)("F4 a pending request has a lifetime (%s)", (_name, M) => {
+  // Spec: Unblock.Safe
+  it("it ends 15 minutes after it was made: it is not listed and cannot be granted", () => {
+    const p = world();
+    let t = Date.parse("2026-11-28T10:00:00Z");
+    const book = bookOf(M, { now: () => new Date(t) });
+    book.request(p, req(AD, "github.com"), "t1");
+    const pend = book.listRequests(p.id)[0];
+    t += 14 * 60 * 1000;
+    expect(book.listRequests(p.id)).toHaveLength(1);
+    t += 61 * 1000;
+    expect(book.listRequests(p.id)).toHaveLength(0);
+    expect(book.grant(pend.requestId, pend.nonce, pend.hash, "abc")).toMatchObject({ ok: false, status: 404 });
+    expect(book.request(p, req(AD, "pypi.org"), "t2").status).toBe("pending"); // the slot is free
+  });
+  // Spec: Unblock.Safe
+  it("a request whose turn ended is marked so, and another turn's different request takes the slot (the old one then finds nothing)", () => {
+    const p = world();
+    const book = bookOf(M);
+    book.request(p, req(AD, "github.com"), "t1");
+    const a = book.listRequests(p.id)[0];
+    expect(a.turnEnded).toBeFalsy();
+    expect(book.request(p, req(AD, "pypi.org"), "t2").reason).toMatch(/already waiting/); // t1 is still running: the slot is held
+    book.endTurn("t1");
+    expect(book.listRequests(p.id)[0].turnEnded).toBe(true);
+    expect(book.request(p, req(AD, "pypi.org"), "t2").status).toBe("pending");
+    expect(book.grant(a.requestId, a.nonce, a.hash, "abc")).toMatchObject({ ok: false, status: 404 });
+    const b = book.listRequests(p.id)[0];
+    expect(b.requestId).not.toBe(a.requestId);
+    expect(b.turnEnded).toBeFalsy();
+  });
+});
+
+describe("F4 / F2 through the bridge", () => {
+  // Spec: Unblock.Safe
+  it("request in turn A, turn A ends: the card says so; turn B's different request takes the slot and A's card cannot be granted", async () => {
+    const b = await start();
+    const a = await pend(b, req(AD, "github.com"));
+    expect(a.turnEnded).toBe(true);
+    await turn(b, REQ(req(AD, "pypi.org")));
+    expect(replyText(rows("reqset").at(-1))).toMatch(/Pending/);
+    expect((await post(b, "/v1/settings/grant", { requestId: a.requestId, nonce: a.nonce, hash: a.hash })).status).toBe(404);
+    const [n] = (await post(b, "/v1/settings/requests", { project: "p1" })).json.requests;
+    expect(n).toMatchObject({ value: "pypi.org", turnEnded: true });
+    expect((await post(b, "/v1/settings/grant", { requestId: n.requestId, nonce: n.nonce, hash: n.hash })).status).toBe(200); // a request whose turn ended can still be approved
+  });
+
+  // Spec: Unblock.Safe
+  it("the 21st request_setting call of one turn is refused with the cap text; the next turn can ask again", async () => {
+    const b = await start();
+    await turn(b, REQ(...Array(21).fill(req("sandbox.enabled", false))));
+    const got = rows("reqset");
+    expect(got).toHaveLength(21);
+    expect(replyText(got[19])).not.toMatch(/too many/);
+    expect(replyText(got[20])).toMatch(/too many setting requests in this turn/);
+    await turn(b, REQ(req("sandbox.enabled", false)));
+    expect(replyText(rows("reqset").at(-1))).not.toMatch(/too many/);
+  });
+});
+
+describe("F3 through the bridge: the store is checked with this install's key", () => {
+  // Spec: Unblock.HandEdits
+  it("an entry written by hand with the old sha256 is not applied, and one copied from another install is not either", async () => {
+    const b = await start();
+    const r = await pend(b);
+    const g = (await post(b, "/v1/settings/grant", { requestId: r.requestId, nonce: r.nonce, hash: r.hash })).json.grant;
+    await turn(b, { prompt: "hello" });
+    expect(lastSettings().sandbox.network.allowedDomains).toContain("github.com");
+    const fileText = fs.readFileSync(storeFile(), "utf8");
+    const old = { ...g };
+    delete old.mac; // as at 7b4bdae1: correct sha256 hash, no mac
+    fs.writeFileSync(storeFile(), JSON.stringify({ version: 1, grants: [old] }));
+    await turn(b, { prompt: "hello" });
+    expect(lastSettings().sandbox.network.allowedDomains).not.toContain("github.com");
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).json.grants).toEqual([]);
+    fs.writeFileSync(storeFile(), fileText); // the genuine file works again
+    await turn(b, { prompt: "hello" });
+    expect(lastSettings().sandbox.network.allowedDomains).toContain("github.com");
+    // another install: its own state folder and key; this file is copied there
+    await b.bridge.close();
+    const other = path.join(dir, "home2", ".gilb-claude-code-bridge");
+    fs.mkdirSync(path.join(other, "projects", "p1"), { recursive: true });
+    fs.writeFileSync(path.join(other, "projects", "p1", "granted-settings.json"), fileText);
+    const c = await start({ opts: { stateDir: other } });
+    await turn(c, { prompt: "hello" });
+    expect(lastSettings().sandbox.network.allowedDomains).not.toContain("github.com");
+    expect((await post(c, "/v1/settings/grants", { project: "p1" })).json.grants).toEqual([]);
+  });
+});
+
+describe("F7 a state folder inside the code folder", () => {
+  // Spec: Unblock.Safe
+  it("setting grants are off: no request_setting tool, the routes answer 409, one warning line at start; a normal state folder is unchanged", async () => {
+    ensureWorld();
+    const lines = [];
+    const inside = path.join(ws, "p1", ".bridge-state");
+    fs.mkdirSync(inside, { recursive: true });
+    const b = await start({ opts: { stateDir: inside, log: (l) => lines.push(l) } });
+    await turn(b, { prompt: "LISTTOOLS" });
+    expect(rows("mcpTools").at(-1).names).not.toContain("request_setting");
+    for (const route of ["requests", "grants", "grant", "decline", "revoke"]) {
+      const r = await post(b, `/v1/settings/${route}`, { project: "p1" });
+      expect(r.status, route).toBe(409);
+      expect(typeof r.json.error).toBe("string");
+    }
+    expect(lines.filter((l) => /setting grants/i.test(l) && /inside the code folder/.test(l))).toHaveLength(1);
+    expect((await turn(b, { prompt: "hello" })).status).toBe(200); // the other features still run
+    await b.bridge.close();
+    const c = await start({ opts: { log: (l) => lines.push(l) } });
+    await turn(c, { prompt: "LISTTOOLS" });
+    expect(rows("mcpTools").at(-1).names).toContain("request_setting");
+    expect((await post(c, "/v1/settings/grants", { project: "p1" })).status).toBe(200);
   });
 });
