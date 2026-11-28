@@ -2442,11 +2442,16 @@ export function seedAccessFile(stateDir: string, wantComputer: boolean, platform
 export function stateDirProblem(stateDir: string, workspace: string | undefined, home: string, platform: string = process.platform): string {
   const ci = platform === "darwin" || platform === "win32";
   const P = platform === "win32" ? path.win32 : path;
-  const norm = (p: string) => { const r = resolveThroughLinks(P.resolve(p)); return ci ? r.toLowerCase() : r; };
+  const fold = (r: string) => (ci ? r.toLowerCase() : r);
+  const norm = (p: string) => fold(resolveThroughLinks(P.resolve(p)));
+  /** The path as written (made absolute, `..` folded, NO link followed): a link in it can be re-pointed later by whoever may write there. */
+  const lit = (p: string) => fold(P.resolve(p));
   const inside = (child: string, parent: string) => child === parent || child.startsWith(parent.endsWith(P.sep) ? parent : parent + P.sep);
-  const sd = norm(stateDir);
-  if (workspace && inside(sd, norm(workspace))) return `The state folder ${stateDir} is inside the code folder, where a code turn can change it. Choose a --state-dir outside it.`;
-  if (inside(sd, norm(P.join(home, "Developer")))) return `The state folder ${stateDir} is inside ~/Developer, where a code turn can change it. Choose a --state-dir outside it.`;
+  // The literal path (and so every ancestor of it) AND the resolved path: either one inside a code place refuses.
+  const sds = [norm(stateDir), lit(stateDir)];
+  const within = (root: string) => { const rs = [norm(root), lit(root)]; return sds.some((s) => rs.some((r) => inside(s, r))); };
+  if (workspace && within(workspace)) return `The state folder ${stateDir} is inside the code folder, where a code turn can change it. Choose a --state-dir outside it.`;
+  if (within(P.join(home, "Developer"))) return `The state folder ${stateDir} is inside ~/Developer, where a code turn can change it. Choose a --state-dir outside it.`;
   return "";
 }
 /** `--access-reset`, run by the person in a Terminal: clears the ON counters and the 24 h lock that three refusals in a row set. A running bridge reads the file at every request. */
@@ -3180,14 +3185,16 @@ export function createBridge(opts: BridgeOptions = {}) {
   const projectRefOf = (t: Turn): ProjectRef | null => (t.proj ? { id: t.proj.name, folderId: t.proj.id, root: t.proj.path } : null);
   /**
    * Why setting grants are off, or "": the state folder is inside the code folder (or ~/Developer), where a code turn can write, so the store could not be
-   * kept away from it. Asked again only when the code folder changes (the answer follows links on disk).
+   * kept away from it. The path is tested as written AND as the disk resolves it, and also off when it resolves somewhere else than at start.
    */
-  let grantsOffFor: { ws: string; why: string } | null = null;
+  const stateRealAtStart = opts.stateDir ? resolveThroughLinks(path.resolve(opts.stateDir)) : "";
   const grantsOff = (): string => {
     if (!opts.stateDir) return "";
-    const ws = workspace?.path ?? "";
-    if (!grantsOffFor || grantsOffFor.ws !== ws) grantsOffFor = { ws, why: stateDirProblem(path.resolve(opts.stateDir), ws || undefined, home, platform) };
-    return grantsOffFor.why;
+    // Asked afresh at every use (no remembered "ok"): a link can be re-pointed at any time.
+    const why = stateDirProblem(path.resolve(opts.stateDir), workspace?.path || undefined, home, platform);
+    if (why) return why;
+    if (resolveThroughLinks(path.resolve(opts.stateDir)) !== stateRealAtStart) return `The state folder ${opts.stateDir} now leads to a different place than when the bridge started (a link was changed), so no stored grant can be trusted. Restart the bridge.`;
+    return "";
   };
   /** Does this turn get the request tool? A top code turn inside a project, running inside the OS sandbox. */
   const settingTurn = (t: Turn): boolean => grantBook !== null && grantsOff() === "" && t.code && !t.parent && t.proj !== null && (t.computer ? sandboxedTurn(t) : !t.filesOnly && codePlatform !== "win32");

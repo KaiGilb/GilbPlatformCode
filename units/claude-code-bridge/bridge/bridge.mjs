@@ -717,12 +717,12 @@ function validateSetting(setting, value, project, rp = defaultRp) {
 /**
  * The reason text, as the person will read it: a short string with no control character of any kind. C0, DEL, C1 and the line and paragraph
  * separators (U+2028, U+2029) become a space; every format character (bidi controls U+202A-202E and U+2066-2069, zero-width U+200B-200D, U+FEFF
- * and the rest of \p{Cf}) is removed, so nothing can reorder or hide the setting and value drawn next to it. Null if there is none, or it is too long.
+ * and the rest of \p{Cf}) is removed, and so are the blank-looking fillers outside Cf (U+034F, Hangul fillers U+115F, U+1160, U+3164, U+FFA0, braille blank U+2800), so nothing can reorder or hide the setting and value drawn next to it. Null if there is none, or it is too long.
  */
 function cleanReason(r) {
     if (typeof r !== "string" || r.length > MAX_REASON)
         return null;
-    const t = r.replace(/\p{Cf}+/gu, "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
+    const t = r.replace(/[\p{Cf}\u034f\u115f\u1160\u2800\u3164\uffa0]+/gu, "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
     return t === "" ? null : t;
 }
 /** The size limits of a request's value, checked before anything touches the disk. Null when it is within them. */
@@ -943,7 +943,9 @@ function createGrantBook(o) {
                     return { status: "refused", reason: "Another request for this project is already waiting for the person's approval. Stop this turn and say what is blocked.", allowed: ALLOWED_LIST };
                 pending.delete(project.id);
             }
-            if (readAll(project.id).length >= MAX_GRANTS_PER_PROJECT)
+            // Only entries that still pass the check count: dead ones (a lost secret, a recreated folder) must not fill the cap. Nothing is pruned here.
+            const liveKey = readKey();
+            if (readAll(project.id).filter((e) => recheck(e, project, liveKey, rp) !== null).length >= MAX_GRANTS_PER_PROJECT)
                 return { status: "refused", reason: "This project already has the most grants it can hold.", allowed: ALLOWED_LIST };
             const p = {
                 requestId: crypto.randomBytes(12).toString("hex"), nonce: crypto.randomBytes(16).toString("hex"), hash: v.hash, reason, turnId,
@@ -973,8 +975,10 @@ function createGrantBook(o) {
                 grantedAt: now().toISOString(), grantedBy: by.slice(0, 16), bridgeVersion: o.bridgeVersion, scope: GRANT_SCOPE,
             };
             try {
-                g.mac = macOf(keyForSaving(), g);
-                const rest = readAll(p.project.id).filter((e) => e?.hash !== p.hash);
+                const key = keyForSaving();
+                g.mac = macOf(key, g);
+                // Writing is when dead entries (they fail the check) are dropped; a read never changes the file.
+                const rest = readAll(p.project.id).filter((e) => e?.hash !== p.hash && recheck(e, p.project, key, rp) !== null);
                 writeAll(p.project.id, [...rest, g]);
             }
             catch (e) {
@@ -3419,12 +3423,17 @@ export function seedAccessFile(stateDir, wantComputer, platform = process.platfo
 export function stateDirProblem(stateDir, workspace, home, platform = process.platform) {
     const ci = platform === "darwin" || platform === "win32";
     const P = platform === "win32" ? path.win32 : path;
-    const norm = (p) => { const r = resolveThroughLinks(P.resolve(p)); return ci ? r.toLowerCase() : r; };
+    const fold = (r) => (ci ? r.toLowerCase() : r);
+    const norm = (p) => fold(resolveThroughLinks(P.resolve(p)));
+    /** The path as written (made absolute, `..` folded, NO link followed): a link in it can be re-pointed later by whoever may write there. */
+    const lit = (p) => fold(P.resolve(p));
     const inside = (child, parent) => child === parent || child.startsWith(parent.endsWith(P.sep) ? parent : parent + P.sep);
-    const sd = norm(stateDir);
-    if (workspace && inside(sd, norm(workspace)))
+    // The literal path (and so every ancestor of it) AND the resolved path: either one inside a code place refuses.
+    const sds = [norm(stateDir), lit(stateDir)];
+    const within = (root) => { const rs = [norm(root), lit(root)]; return sds.some((s) => rs.some((r) => inside(s, r))); };
+    if (workspace && within(workspace))
         return `The state folder ${stateDir} is inside the code folder, where a code turn can change it. Choose a --state-dir outside it.`;
-    if (inside(sd, norm(P.join(home, "Developer"))))
+    if (within(P.join(home, "Developer")))
         return `The state folder ${stateDir} is inside ~/Developer, where a code turn can change it. Choose a --state-dir outside it.`;
     return "";
 }
@@ -4170,16 +4179,19 @@ export function createBridge(opts = {}) {
     const projectRefOf = (t) => (t.proj ? { id: t.proj.name, folderId: t.proj.id, root: t.proj.path } : null);
     /**
      * Why setting grants are off, or "": the state folder is inside the code folder (or ~/Developer), where a code turn can write, so the store could not be
-     * kept away from it. Asked again only when the code folder changes (the answer follows links on disk).
+     * kept away from it. The path is tested as written AND as the disk resolves it, and also off when it resolves somewhere else than at start.
      */
-    let grantsOffFor = null;
+    const stateRealAtStart = opts.stateDir ? resolveThroughLinks(path.resolve(opts.stateDir)) : "";
     const grantsOff = () => {
         if (!opts.stateDir)
             return "";
-        const ws = workspace?.path ?? "";
-        if (!grantsOffFor || grantsOffFor.ws !== ws)
-            grantsOffFor = { ws, why: stateDirProblem(path.resolve(opts.stateDir), ws || undefined, home, platform) };
-        return grantsOffFor.why;
+        // Asked afresh at every use (no remembered "ok"): a link can be re-pointed at any time.
+        const why = stateDirProblem(path.resolve(opts.stateDir), workspace?.path || undefined, home, platform);
+        if (why)
+            return why;
+        if (resolveThroughLinks(path.resolve(opts.stateDir)) !== stateRealAtStart)
+            return `The state folder ${opts.stateDir} now leads to a different place than when the bridge started (a link was changed), so no stored grant can be trusted. Restart the bridge.`;
+        return "";
     };
     /** Does this turn get the request tool? A top code turn inside a project, running inside the OS sandbox. */
     const settingTurn = (t) => grantBook !== null && grantsOff() === "" && t.code && !t.parent && t.proj !== null && (t.computer ? sandboxedTurn(t) : !t.filesOnly && codePlatform !== "win32");

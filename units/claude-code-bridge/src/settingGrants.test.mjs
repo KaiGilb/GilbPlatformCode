@@ -863,3 +863,82 @@ describe("F7 a state folder inside the code folder", () => {
     expect((await post(c, "/v1/settings/grants", { project: "p1" })).status).toBe(200);
   });
 });
+
+// --- fix batch 1c (hacker round 2): N1 state-dir links, N2 dead entries, N4 filler characters -------------------------------------------------------
+describe("N1 a state folder reached through a link", () => {
+  // Spec: Unblock.Safe
+  it("a link INSIDE the code folder that leads outside: grants are off (no tool, routes 409, no stored grant applied)", async () => {
+    ensureWorld();
+    const real = path.join(dir, "outside-real");
+    fs.mkdirSync(real, { recursive: true });
+    const link = path.join(ws, "p1", "inlink");
+    fs.symlinkSync(real, link);
+    const lines = [];
+    const b = await start({ opts: { stateDir: link, log: (l) => lines.push(l) } });
+    await turn(b, { prompt: "LISTTOOLS" });
+    expect(rows("mcpTools").at(-1).names).not.toContain("request_setting");
+    for (const route of ["requests", "grants", "grant", "decline", "revoke"]) expect((await post(b, `/v1/settings/${route}`, { project: "p1" })).status, route).toBe(409);
+    expect(lines.filter((l) => /Setting grants are off/.test(l))).toHaveLength(1);
+  });
+
+  // Spec: Unblock.HandEdits
+  it("a link re-pointed after start: the next turn applies no grant from the new target (even a sealed copy), and the routes answer 409", async () => {
+    ensureWorld();
+    const real1 = path.join(dir, "real1");
+    const real2 = path.join(dir, "real2");
+    fs.mkdirSync(real1, { recursive: true });
+    fs.mkdirSync(real2, { recursive: true });
+    const link = path.join(home, "state-link");
+    fs.symlinkSync(real1, link);
+    const b = await start({ opts: { stateDir: link } });
+    const r = await pend(b);
+    expect((await post(b, "/v1/settings/grant", { requestId: r.requestId, nonce: r.nonce, hash: r.hash })).status).toBe(200);
+    await turn(b, { prompt: "hello" });
+    expect(lastSettings().sandbox.network.allowedDomains).toContain("github.com");
+    fs.cpSync(path.join(real1, "projects"), path.join(real2, "projects"), { recursive: true }); // the new target holds a genuine, sealed copy
+    fs.rmSync(link);
+    fs.symlinkSync(real2, link);
+    await turn(b, { prompt: "hello" });
+    expect(lastSettings().sandbox.network.allowedDomains).not.toContain("github.com");
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).status).toBe(409);
+  });
+});
+
+describe.each(MODULES)("N2 dead entries do not fill the cap (%s)", (_name, M) => {
+  // Spec: Unblock.Safe
+  it("50 entries with a wrong seal do not count; the new grant is accepted and the file then holds only live entries; a read never prunes", () => {
+    const p = world();
+    const book = bookOf(M);
+    const first = book.request(p, req(AD, "pypi.org"), "t0");
+    const f0 = book.listRequests(p.id)[0];
+    expect(book.grant(f0.requestId, f0.nonce, f0.hash, "abc").ok).toBe(true); // makes the secret
+    const file = path.join(tmp, "state", "projects", p.id, "granted-settings.json");
+    const live = JSON.parse(fs.readFileSync(file, "utf8")).grants[0];
+    const dead = Array.from({ length: 50 }, (_, i) => ({ ...live, id: i.toString(16).padStart(24, "0"), mac: "0".repeat(64), hash: String(i) }));
+    fs.writeFileSync(file, JSON.stringify({ version: 1, grants: [live, ...dead] }));
+    expect(book.listGrants(p)).toHaveLength(1);
+    expect(JSON.parse(fs.readFileSync(file, "utf8")).grants).toHaveLength(51); // reading did not prune
+    expect(book.request(p, req(AD, "github.com"), "t1").status).toBe("pending");
+    const n = book.listRequests(p.id)[0];
+    expect(book.grant(n.requestId, n.nonce, n.hash, "abc").ok).toBe(true);
+    const after = JSON.parse(fs.readFileSync(file, "utf8")).grants;
+    expect(after).toHaveLength(2);
+    expect(after.map((g) => g.normalized.value).sort()).toEqual(["github.com", "pypi.org"]);
+    expect(first.status).toBe("pending");
+  });
+});
+
+describe.each(MODULES)("N4 filler characters in the reason (%s)", (_name, M) => {
+  // Spec: Unblock.Safe
+  it("U+3164, U+2800, U+034F, U+115F, U+1160 and U+FFA0 are removed", () => {
+    const p = world();
+    const book = bookOf(M);
+    for (const c of ["ㅤ", "⠀", "͏", "ᅟ", "ᅠ", "ﾠ"]) {
+      expect(book.request(p, req(LB, true, `a${c}b${c}${c}c`), "t1").status, c.codePointAt(0).toString(16)).toBe("pending");
+      const [x] = book.listRequests(p.id);
+      expect(x.reason, c.codePointAt(0).toString(16)).toBe("abc");
+      book.decline(x.requestId);
+    }
+    expect(book.request(p, req(LB, true, "ㅤ⠀"), "t1").status).toBe("refused"); // nothing left to show
+  });
+});

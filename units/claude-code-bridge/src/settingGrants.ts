@@ -169,11 +169,11 @@ export function validateSetting(setting: unknown, value: unknown, project: Proje
 /**
  * The reason text, as the person will read it: a short string with no control character of any kind. C0, DEL, C1 and the line and paragraph
  * separators (U+2028, U+2029) become a space; every format character (bidi controls U+202A-202E and U+2066-2069, zero-width U+200B-200D, U+FEFF
- * and the rest of \p{Cf}) is removed, so nothing can reorder or hide the setting and value drawn next to it. Null if there is none, or it is too long.
+ * and the rest of \p{Cf}) is removed, and so are the blank-looking fillers outside Cf (U+034F, Hangul fillers U+115F, U+1160, U+3164, U+FFA0, braille blank U+2800), so nothing can reorder or hide the setting and value drawn next to it. Null if there is none, or it is too long.
  */
 function cleanReason(r: unknown): string | null {
   if (typeof r !== "string" || r.length > MAX_REASON) return null;
-  const t = r.replace(/\p{Cf}+/gu, "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
+  const t = r.replace(/[\p{Cf}\u034f\u115f\u1160\u2800\u3164\uffa0]+/gu, "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
   return t === "" ? null : t;
 }
 
@@ -392,7 +392,9 @@ export function createGrantBook(o: GrantBookOptions) {
         if (!have.turnEnded) return { status: "refused", reason: "Another request for this project is already waiting for the person's approval. Stop this turn and say what is blocked.", allowed: ALLOWED_LIST };
         pending.delete(project.id);
       }
-      if (readAll(project.id).length >= MAX_GRANTS_PER_PROJECT) return { status: "refused", reason: "This project already has the most grants it can hold.", allowed: ALLOWED_LIST };
+      // Only entries that still pass the check count: dead ones (a lost secret, a recreated folder) must not fill the cap. Nothing is pruned here.
+      const liveKey = readKey();
+      if (readAll(project.id).filter((e) => recheck(e, project, liveKey, rp) !== null).length >= MAX_GRANTS_PER_PROJECT) return { status: "refused", reason: "This project already has the most grants it can hold.", allowed: ALLOWED_LIST };
       const p: PendingRequest = {
         requestId: crypto.randomBytes(12).toString("hex"), nonce: crypto.randomBytes(16).toString("hex"), hash: v.hash, reason, turnId,
         createdAt: now().toISOString(), project, normalized: v.normalized, turnEnded: false,
@@ -418,8 +420,10 @@ export function createGrantBook(o: GrantBookOptions) {
         grantedAt: now().toISOString(), grantedBy: by.slice(0, 16), bridgeVersion: o.bridgeVersion, scope: GRANT_SCOPE,
       };
       try {
-        g.mac = macOf(keyForSaving(), g);
-        const rest = readAll(p.project.id).filter((e) => (e as Record<string, unknown>)?.hash !== p.hash);
+        const key = keyForSaving();
+        g.mac = macOf(key, g);
+        // Writing is when dead entries (they fail the check) are dropped; a read never changes the file.
+        const rest = readAll(p.project.id).filter((e) => (e as Record<string, unknown>)?.hash !== p.hash && recheck(e, p.project, key, rp) !== null);
         writeAll(p.project.id, [...rest, g]);
       } catch (e) {
         log(`setting grant not saved: ${(e as Error).message}`);
