@@ -46,6 +46,10 @@ import type { AddressInfo } from "node:net";
 import type { ChildProcess, ExecFileException } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { extractTimeLines } from "@kaigilb/gilbplatformcode-time-line";
+import { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting } from "./settingGrants.js";
+import type { ProjectRef } from "./settingGrants.js";
+// Setting grants (0.4.1): the allow-list and its checks are exported so the tests (and the app's tooling) use the very code the bridge runs.
+export { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting };
 
 /** What the code reads from a caught error (Node errors carry `code`; our own body errors carry `status`). */
 type ErrLike = { code?: string; message?: string; status?: number };
@@ -285,7 +289,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.4.0";
+export const BRIDGE_BUILD = "0.4.1";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1364,6 +1368,18 @@ export function checkSubscriptionLogin(claudeBin = "claude", env: NodeJS.Process
 export const APPROVAL_WAIT_MS = 10 * 60 * 1000;
 /** The one extra tool of the per-turn MCP server in an each-write code turn: Claude Code asks it before a write or a command. */
 export const APPROVE_TOOL = "bridge_approve";
+/** The one tool a sandboxed code turn in a project has to ASK for a wider setting (0.4.1). It can only ask: approval comes from the app, never from the chat. */
+export const REQUEST_SETTING_TOOL = "request_setting";
+/** No approve, grant or confirm field: the request carries what is wanted and why, nothing that could approve it. */
+export const requestSettingSchema = {
+  type: "object", additionalProperties: false, required: ["setting", "value", "reason"],
+  properties: {
+    setting: { type: "string", enum: Object.keys(ALLOWED), description: "The one sandbox setting to widen." },
+    value: { description: "true for sandbox.network.allowLocalBinding; the path of one socket inside the project for sandbox.network.allowUnixSockets; one host from the list for sandbox.network.allowedDomains." },
+    reason: { type: "string", description: "One short sentence: what is blocked and why you need this." },
+  },
+};
+const requestSettingDescription = `Ask the person to widen ONE sandbox setting for this project. You cannot grant it yourself: the person approves in the app, then the next turn has it. Allowed: ${ALLOWED_LIST.join(" | ")}. After asking, stop this turn and say what is blocked.`;
 const approveSchema = { type: "object", properties: { tool_name: { type: "string" }, input: { type: "object" }, tool_use_id: { type: "string" } }, required: ["tool_name", "input"] };
 export const CODE_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"];
 /** Native Windows runs a reduced code mode: files only, no commands (and so no sandbox to start). */
@@ -1680,7 +1696,7 @@ export function fileToolDenyRules(places: readonly string[]): string[] {
 }
 
 /** The Claude Code settings a code turn runs with (passed inline with --settings, never a file in the folder). */
-export function codeTurnSettings(home: string, platform: string, extraDenyRead: string[] = [], approval: "session" | "each-write" = "session", claudeConfigDir = "", delegate = false) {
+export function codeTurnSettings(home: string, platform: string, extraDenyRead: string[] = [], approval: "session" | "each-write" = "session", claudeConfigDir = "", delegate = false, storeDeny: readonly string[] = []) {
   // sandbox paths are home-relative (`~/`), which Claude Code expands itself; the file-tool rules need absolute paths, so they use `home`
   const fileRules = fileToolDenyRules([...credentialPlaces(home, platform, claudeConfigDir), ...extraDenyRead.filter((p) => path.isAbsolute(p) || /^[A-Za-z]:[\\/]/.test(p))]);
   const agentDeny = delegate ? SUBAGENT_TOOL_NAMES.flatMap((n) => BUILTIN_AGENT_TYPES.map((t) => `${n}(${t})`)) : [];
@@ -1700,7 +1716,8 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
         allowLocalBinding: true,
         allowedDomains: ["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org", "codeload.github.com", "raw.githubusercontent.com"],
       },
-      filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir)] },
+      // storeDeny (0.4.1) is the bridge's grant store: a command may neither read nor write it, so it cannot plant or edit a grant.
+      filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir), ...storeDeny], ...(storeDeny.length > 0 ? { denyWrite: [...storeDeny] } : {}) },
     },
     permissions: {
       deny: [...agentDeny, ...fileRules],
@@ -3155,6 +3172,19 @@ export function createBridge(opts: BridgeOptions = {}) {
   const sandboxTmpDirs = () => [...new Set([os.tmpdir(), envGet(env, "TMPDIR") ?? ""].filter((x) => x && path.isAbsolute(x)))];
   /** 0.3.13: computer mode on macOS and Linux runs inside Claude Code's OS sandbox (Windows has none, so every call is asked there). Decided by the turn's own copy of the mode. */
   const sandboxedTurn = (t: Turn) => t.computer && codePlatform !== "win32" && t.code && t.approval === "session";
+  // --- Setting grants (0.4.1) ---
+  // Needs the bridge's own state folder: the grants are kept there, where a code turn can neither read nor write (denyRead, denyWrite).
+  const grantBook = opts.stateDir ? createGrantBook({ stateDir: path.resolve(opts.stateDir), bridgeVersion: BRIDGE_BUILD, log }) : null;
+  /** The folders that hold the grants, as the path is written and as the disk resolves it. Denied for write (and read) in both sandbox modes. */
+  const grantStoreDeny: string[] = opts.stateDir ? [...new Set([storeFolder(path.resolve(opts.stateDir)), storeFolder(resolveThroughLinks(path.resolve(opts.stateDir)))])] : [];
+  const projectRefOf = (t: Turn): ProjectRef | null => (t.proj ? { id: t.proj.name, folderId: t.proj.id, root: t.proj.path } : null);
+  /** Does this turn get the request tool? A top code turn inside a project, running inside the OS sandbox. */
+  const settingTurn = (t: Turn): boolean => grantBook !== null && t.code && !t.parent && t.proj !== null && (t.computer ? sandboxedTurn(t) : !t.filesOnly && codePlatform !== "win32");
+  /** The turn's settings with this project's grants applied (read afresh from disk, every one checked again). */
+  const withGrants = <T extends Record<string, any>>(t: Turn, base: T, mode: "folder" | "computer"): T => {
+    const ref = projectRefOf(t);
+    return grantBook && ref ? applyGrants(base, grantBook.grantsFor(ref), mode, ref) : base;
+  };
   const protectOpts = (t: Turn): ProtectOpts => ({ home, places: [...new Set([...protectedPlaces(home, protectedExtra), ...credentialPlaces(home, codePlatform, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")])], base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
   /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
   const idOf = (p: string): string => {
@@ -3707,6 +3737,16 @@ export function createBridge(opts: BridgeOptions = {}) {
     log(`Pairing code: ${pairingCode}`);
   }
 
+  /** What `request_setting` answers the agent. Never holds the nonce or the hash; those go to the app only. */
+  function requestSettingFor(turn: Turn, args: unknown): { text: string; isError: boolean } {
+    const ref = projectRefOf(turn);
+    if (!grantBook || !ref || !turn.proj) return { text: "This turn cannot ask for a setting.", isError: true };
+    if (idOf(turn.proj.path) !== turn.proj.id) return { text: "The project folder changed on disk, so this turn cannot ask for a setting.", isError: true };
+    const r = grantBook.request(ref, args, turn.id);
+    if (r.status === "refused") return { text: `Refused: ${r.reason}\nAllowed:\n${r.allowed.join("\n")}`, isError: true };
+    return { text: "Pending the person's approval in the app. Stop this turn now and say what is blocked; the person approves in the app, and the next turn has it.", isError: false };
+  }
+
   // ---- MCP server (one per turn), spoken to by `claude` over HTTP on 127.0.0.1 ----------------------------------
   function mcpReply(turn: Turn, msg: McpMsg): unknown {
     const { id, method, params } = msg;
@@ -3725,12 +3765,13 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (method === "tools/list") {
       return ok({
         tools: [
-          ...turn.tools.map((t: ToolSpec) => ({
+          ...turn.tools.filter((t: ToolSpec) => !(settingTurn(turn) && t.name === REQUEST_SETTING_TOOL)).map((t: ToolSpec) => ({
             name: t.name,
             description: t.description ?? "",
             inputSchema: t.inputSchema ?? { type: "object", properties: {} },
           })),
           ...(askingTurn ? [{ name: APPROVE_TOOL, description: "Permission prompt tool: decides whether Claude Code may run a tool.", inputSchema: approveSchema }] : []),
+          ...(settingTurn(turn) ? [{ name: REQUEST_SETTING_TOOL, description: requestSettingDescription, inputSchema: requestSettingSchema }] : []),
         ],
       });
     }
@@ -3739,6 +3780,11 @@ export function createBridge(opts: BridgeOptions = {}) {
       // The bridge answers this one itself: never relayed to the page, never counted against the tool budget.
       if (askingTurn && name === APPROVE_TOOL) {
         return decideApproval(turn, (params?.arguments ?? {}) as Record<string, unknown>).then((d) => ok({ content: [{ type: "text", text: JSON.stringify(d) }] }));
+      }
+      // Also answered by the bridge itself. It can only ASK: it saves one pending request and never touches a grant.
+      if (name === REQUEST_SETTING_TOOL && settingTurn(turn)) {
+        const text = requestSettingFor(turn, params?.arguments);
+        return Promise.resolve(ok({ content: [{ type: "text", text: text.text }], isError: text.isError }));
       }
       if (!turn.tools.some((t: ToolSpec) => t.name === name)) return Promise.resolve(bad(-32602, `Unknown tool ${name}`));
       noteActivity(turn, cap(String(name)), true);
@@ -4400,7 +4446,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
       "--permission-prompts", "host",
       "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
-      "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, protectedExtra), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)], envGet(env, "CLAUDE_CONFIG_DIR") ?? "") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
+      "--settings", JSON.stringify(sandboxedTurn(turn) ? withGrants(turn, computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, protectedExtra), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home), ...grantStoreDeny], envGet(env, "CLAUDE_CONFIG_DIR") ?? ""), "computer") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
       "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n", turn.preview)}`,
       "--system-prompt-snapshot", "off",
     ];
@@ -4434,7 +4480,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--permission-prompts", turn.approval === "each-write" || !filesOnly ? "host" : "none",
       ...(turn.approval === "each-write" || !filesOnly ? ["--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`] : []),
       "--disable-slash-commands",
-      "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, [...(opts.extraDenyRead ?? []), ...stateProtected], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "", turn.delegate)),
+      "--settings", JSON.stringify(withGrants(turn, codeTurnSettings(os.homedir(), codePlatform, [...(opts.extraDenyRead ?? []), ...stateProtected], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "", turn.delegate, grantStoreDeny), "folder")),
       "--system-prompt", turn.system,
       "--system-prompt-snapshot", "off",
       "--append-system-prompt", turn.proj
@@ -5057,6 +5103,41 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     return json(res, 200, { projects: out.slice(0, PROJECT_LIST_CAP) });
+  }
+
+  // ---- setting grants (0.4.1): the app's routes. Only a paired app reaches them; nothing the chat session can call grants. ----------------
+  /** POST /v1/settings/{requests,grant,decline,grants,revoke}. The bridge's own part of the approval: it holds the pending request, the nonce and the hash. */
+  async function handleSettings(req: IncomingMessage, res: ServerResponse, route: string) {
+    if (!grantBook) return json(res, 409, { error: "This bridge has no state folder, so it cannot keep setting grants.", code: "NoStateFolder" });
+    let body: Record<string, unknown>;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
+    }
+    // A project is named as /v1/projects lists it; `..`, a slash or any path text is not a name and finds nothing.
+    const project = (): ProjectRef | null => {
+      const p = resolveProject(body.project);
+      return p ? { id: p.name, folderId: p.id, root: p.path } : null;
+    };
+    if (route === "/v1/settings/requests") {
+      const ref = project();
+      if (!ref) return json(res, 400, { error: NO_SUCH_PROJECT });
+      // The card needs the exact value, the reason, and the nonce and hash it sends back with its click.
+      return json(res, 200, { requests: grantBook.listRequests(ref.id).map((r) => ({ requestId: r.requestId, nonce: r.nonce, hash: r.hash, setting: r.normalized.setting, value: r.normalized.value, reason: r.reason, createdAt: r.createdAt, project: r.project.id })) });
+    }
+    if (route === "/v1/settings/grants") {
+      const ref = project();
+      if (!ref) return json(res, 400, { error: NO_SUCH_PROJECT });
+      return json(res, 200, { grants: grantBook.listGrants(ref) });
+    }
+    if (route === "/v1/settings/grant") {
+      const r = grantBook.grant(body.requestId, body.nonce, body.hash, callerKey(req));
+      return r.ok ? json(res, 200, { grant: r.grant }) : json(res, r.status, { error: r.error });
+    }
+    if (route === "/v1/settings/decline") return grantBook.decline(body.requestId) ? json(res, 200, { ok: true }) : json(res, 404, { error: "No such pending request." });
+    if (route === "/v1/settings/revoke") return grantBook.revoke(body.grantId) ? json(res, 200, { ok: true }) : json(res, 404, { error: "No such grant." });
+    return json(res, 404, { error: "No such route." });
   }
 
   /** The names /v1/projects lists now: direct subfolders of the code folder that are real directories, not links, with an allowed name. */
@@ -5762,6 +5843,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         a.settle(body.allow, undefined, body.scope === "turn" ? "turn" : "once");
         return json(res, 200, { ok: true });
       }
+      if (req.method === "POST" && url.pathname.startsWith("/v1/settings/")) return handleSettings(req, res, url.pathname);
       if (req.method === "POST" && url.pathname === "/v1/tool-result") {
         let body;
         try {

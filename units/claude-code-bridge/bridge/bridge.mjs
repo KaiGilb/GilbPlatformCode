@@ -553,6 +553,382 @@ function extractTimeLines(text, opts) {
 
 return { extractTimeLines };
 })();
+const { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting } = (() => { /* inlined from src/settingGrants.ts by build-bridge.mjs; do not edit */
+/**
+ * Setting grants: how a code turn can ask for ONE sandbox setting to be widened, and how the person's approval is kept (0.4.1).
+ *
+ * The agent can only ASK (`request_setting`). The bridge checks the request against a closed list (ALLOWED), refuses anything on a never-list (NEVER),
+ * and keeps at most one pending request per project. Only the app, over the paired link, can turn a pending request into a grant (the nonce and the
+ * hash from the card are both needed, once). A grant lives in the bridge's own state folder until it is removed, with no expiry. Every time a turn is
+ * built, each stored grant is checked AGAIN (applyGrants), so a planted or hand-edited file widens nothing.
+ *
+ * This file is inlined into bridge/bridge.mjs by scripts/build-bridge.mjs (the built bridge is ONE file that runs on a person's computer and cannot
+ * resolve a relative import). bridge.ts already imports `fs`, `path` and `crypto` under those names, and the build strips this file's own import
+ * lines, so keep its imports to exactly those three.
+ */
+// --- What may be granted ---------------------------------------------------------------------------------------------
+/**
+ * The only outbound hosts a grant can add. A closed list that ships with the bridge: a domain a person (or an agent) types is never added, and a
+ * new domain needs a new bridge release (Kai, 2026-11-28). Matching is exact, byte for byte: no case folding, no trailing dot, no wildcard, so a
+ * look-alike (`GitHub.com.`, `github.com.evil.example`, a Cyrillic letter) is simply not in the list.
+ */
+const DOMAIN_CATALOG = ["github.com", "codeload.github.com", "objects.githubusercontent.com", "pypi.org", "files.pythonhosted.org", "crates.io", "static.crates.io", "playwright.azureedge.net"];
+/** The three settings a grant may widen. Anything else is refused as "not on the allowed list". */
+const ALLOWED = {
+    "sandbox.network.allowLocalBinding": "Let a command in this project open a local port (value: true).",
+    "sandbox.network.allowUnixSockets": "Let a command in this project use one Unix socket that is inside the project folder (value: the socket's path).",
+    "sandbox.network.allowedDomains": `Let a command in this project reach one more host, exactly one of: ${DOMAIN_CATALOG.join(", ")} (value: the host).`,
+};
+/** One line per allowed setting, for the refusal the agent sees. */
+const ALLOWED_LIST = Object.entries(ALLOWED).map(([k, v]) => `${k}: ${v}`);
+/**
+ * Setting names that are refused whatever ALLOWED says, so a later edit to ALLOWED cannot open one by mistake. A name matches when it is the
+ * entry or sits under it (`permissions` covers `permissions.defaultMode`; `sandbox.filesystem` covers every write path, so none outside the project).
+ */
+const NEVER_SETTINGS = [
+    "sandbox.enabled", "sandbox.allowunsandboxedcommands", "sandbox.excludedcommands", "sandbox.filesystem",
+    "hooks", "env", "apikeyhelper", "mcpservers", "permissions",
+];
+/** One saved grant's scope: it lasts until the person removes it (Kai, 2026-11-28). There is no other scope and no expiry time. */
+const GRANT_SCOPE = "project-until-removed";
+/** Project names the bridge lists: letters, digits, dot, dash, underscore, at most 64, not starting with a dot. Keeps a project id from walking the path. */
+const PROJECT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const MAX_GRANTS_PER_PROJECT = 50;
+const MAX_REASON = 300;
+// --- Checking one request --------------------------------------------------------------------------------------------
+const lower = (s) => s.replace(/\s+/g, "").toLowerCase();
+/** Why this setting or value is on the never-list, or null. Runs BEFORE the allow-list, and again when a grant is loaded. */
+function neverReason(setting, value) {
+    if (typeof setting === "string") {
+        const s = lower(setting);
+        for (const n of NEVER_SETTINGS)
+            if (s === n || s.startsWith(`${n}.`) || s.startsWith(`${n}[`))
+                return `${setting} can never be granted.`;
+        if (s.includes(".claude"))
+            return "A .claude path can never be granted.";
+    }
+    if (typeof value === "string") {
+        // Any wildcard host or path, however it is spelled.
+        if (/[*?]/.test(value))
+            return "A wildcard can never be granted.";
+        if (value.split(/[\\/]+/).includes(".claude") || /(^|[\\/])\.claude\.json$/.test(value))
+            return "A .claude path can never be granted.";
+        // The docker and ssh-agent sockets hand over the whole computer; refused even if some link inside the project points at them.
+        if (/docker\.sock|containerd\.sock|ssh-agent|ssh_auth_sock|agent\.\d+|S\.gpg-agent/i.test(value))
+            return "That socket can never be granted (docker, ssh-agent and gpg-agent sockets are never allowed).";
+    }
+    return null;
+}
+/** The hash a card and a grant are bound to: the project and the exact setting and value. The reason text is not part of it. */
+function hashOf(project, n) {
+    return crypto.createHash("sha256").update(JSON.stringify(["settingGrant/1", project.id, project.folderId, n.setting, n.value])).digest("hex");
+}
+/**
+ * The path a socket would really have: every link followed. A path that does not exist yet is the real path of its nearest existing parent plus the
+ * missing names; a link whose target is missing (it exists, but cannot be resolved) gives null, because the target could be made later anywhere.
+ */
+function realResolve(p, rp) {
+    const rest = [];
+    let cur = path.resolve(p);
+    for (;;) {
+        try {
+            const r = rp(cur);
+            return rest.length ? path.join(r, ...rest.reverse()) : r;
+        }
+        catch {
+            let linkOrOther = true;
+            try {
+                fs.lstatSync(cur);
+            }
+            catch {
+                linkOrOther = false;
+            }
+            if (linkOrOther)
+                return null; // it is there but cannot be resolved: a dangling link or a loop
+            const up = path.dirname(cur);
+            if (up === cur)
+                return null;
+            rest.push(path.basename(cur));
+            cur = up;
+        }
+    }
+}
+/** Is `child` strictly inside `root` (not the root itself)? */
+function strictlyInside(root, child) {
+    const rel = path.relative(root, child);
+    return rel !== "" && rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+}
+/**
+ * Checks one setting and value for one project. Pure but for reading links on disk (the `rp` argument stands in for fs.realpathSync in tests).
+ * Order: the never-list first, then the allow-list, then the exact rule of that item.
+ */
+function validateSetting(setting, value, project, rp = fs.realpathSync) {
+    if (!project || typeof project.id !== "string" || !PROJECT_ID_RE.test(project.id) || typeof project.folderId !== "string" || typeof project.root !== "string")
+        return { ok: false, reason: "No such project." };
+    const never = neverReason(setting, value);
+    if (never)
+        return { ok: false, reason: never };
+    if (typeof setting !== "string" || !Object.prototype.hasOwnProperty.call(ALLOWED, setting))
+        return { ok: false, reason: "That setting is not on the allowed list." };
+    const name = setting;
+    let normalized;
+    if (name === "sandbox.network.allowLocalBinding") {
+        if (value !== true)
+            return { ok: false, reason: "allowLocalBinding can only be requested with the value true." };
+        normalized = { setting: name, value: true };
+    }
+    else if (name === "sandbox.network.allowedDomains") {
+        // Exact entry of the closed catalog. A typed domain, a wildcard or a look-alike is not one.
+        if (typeof value !== "string" || !DOMAIN_CATALOG.includes(value))
+            return { ok: false, reason: `That host is not in the list this bridge can grant. The only hosts are: ${DOMAIN_CATALOG.join(", ")}.` };
+        normalized = { setting: name, value };
+    }
+    else {
+        if (typeof value !== "string" || value === "" || value.length > 1024 || value.includes("\0"))
+            return { ok: false, reason: "A socket value is the path of one socket inside the project folder." };
+        const base = realResolve(project.root, rp);
+        if (!base)
+            return { ok: false, reason: "No such project." };
+        const real = realResolve(path.isAbsolute(value) ? value : path.join(project.root, value), rp);
+        // The REAL path decides, so a link inside the project that points at a socket outside it is refused (and the stored value is the real path the sandbox will see).
+        if (!real || !strictlyInside(base, real))
+            return { ok: false, reason: "A socket must be inside the project folder (links are followed)." };
+        const again = neverReason(setting, real);
+        if (again)
+            return { ok: false, reason: again };
+        normalized = { setting: name, value: real };
+    }
+    return { ok: true, normalized, hash: hashOf(project, normalized) };
+}
+/** The reason text, as the person will read it: a short string with no control characters. Null if there is none. */
+function cleanReason(r) {
+    if (typeof r !== "string")
+        return null;
+    const t = r.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+    return t === "" || t.length > MAX_REASON ? null : t;
+}
+/** The request tool's checker: `{setting, value, reason}` for one project. A refusal says why; the caller adds the allowed list. */
+function validateRequest(req, project, rp = fs.realpathSync) {
+    if (!req || typeof req !== "object")
+        return { ok: false, reason: "The request must be an object with setting, value and reason." };
+    const r = req;
+    // Only these three fields: an `approve`, `grant` or `nonce` field in a request is refused, not ignored, so nothing can pretend to approve.
+    const extra = Object.keys(r).filter((k) => k !== "setting" && k !== "value" && k !== "reason");
+    if (extra.length > 0)
+        return { ok: false, reason: `A request has only setting, value and reason; it cannot carry: ${extra.join(", ")}.` };
+    if (cleanReason(r.reason) === null)
+        return { ok: false, reason: `A reason is needed: one short sentence of at most ${MAX_REASON} characters saying what is blocked.` };
+    return validateSetting(r.setting, r.value, project, rp);
+}
+// --- Applying grants to a settings object ----------------------------------------------------------------------------
+/**
+ * Adds one checked setting to a Claude Code settings object (in place). Adds only what is new. `*` is never added in folder mode, and a computer
+ * turn already has `*`, so a host is not listed twice there. This guard is its own step, apart from the checks, on purpose: it is the last line.
+ */
+function mergeGrant(settings, n, mode) {
+    const sb = settings.sandbox;
+    if (!sb || typeof sb !== "object")
+        return; // no sandbox block (Windows files-only): nothing to widen
+    if (!sb.network || typeof sb.network !== "object")
+        sb.network = {};
+    const net = sb.network;
+    if (n.setting === "sandbox.network.allowLocalBinding") {
+        net.allowLocalBinding = true;
+    }
+    else if (n.setting === "sandbox.network.allowUnixSockets") {
+        const list = Array.isArray(net.allowUnixSockets) ? net.allowUnixSockets : [];
+        if (!list.includes(n.value))
+            list.push(n.value);
+        net.allowUnixSockets = list;
+    }
+    else {
+        const d = n.value;
+        if (mode === "folder" && d.includes("*"))
+            return;
+        const list = Array.isArray(net.allowedDomains) ? net.allowedDomains : [];
+        if (list.includes("*") || list.includes(d))
+            return;
+        list.push(d);
+        net.allowedDomains = list;
+    }
+}
+/** One stored entry, checked again from nothing: its shape, scope, project, setting, value and hash. Null drops it. */
+function recheck(g, project, rp) {
+    if (!g || typeof g !== "object")
+        return null;
+    const e = g;
+    if (typeof e.id !== "string" || e.scope !== GRANT_SCOPE)
+        return null;
+    if (e.projectId !== project.id || e.folderId !== project.folderId)
+        return null; // another project's grant
+    const n = e.normalized;
+    if (!n || typeof n !== "object" || typeof e.hash !== "string")
+        return null;
+    const v = validateSetting(n.setting, n.value, project, rp);
+    if (!v.ok)
+        return null; // unknown, on the never-list, outside the project, not in the catalog
+    if (v.hash !== e.hash || v.normalized.setting !== n.setting || v.normalized.value !== n.value)
+        return null; // tampered, or a link now points elsewhere
+    return v.normalized;
+}
+/**
+ * The settings a turn runs with: `base` plus every stored grant that still passes. Pure: `base` is not changed. A grant that is unknown, tampered
+ * with, on the never-list or from another project is dropped, so an item taken out of ALLOWED by a bridge upgrade stops applying at once.
+ */
+function applyGrants(base, grants, mode, project, rp = fs.realpathSync) {
+    const out = structuredClone(base);
+    for (const g of Array.isArray(grants) ? grants : []) {
+        const n = recheck(g, project, rp);
+        if (n)
+            mergeGrant(out, n, mode);
+    }
+    return out;
+}
+/** The folder that holds every project's grants. A code turn may neither read nor write it (denyWrite and denyRead). */
+const storeFolder = (stateDir) => path.join(stateDir, "projects");
+const eq = (a, b) => {
+    const h = (s) => crypto.createHash("sha256").update(s).digest();
+    return crypto.timingSafeEqual(h(a), h(b));
+};
+/** The grant store and the pending requests of one bridge. Reads the file afresh on every call: nothing is cached, so a removed grant is gone at once. */
+function createGrantBook(o) {
+    const now = o.now ?? (() => new Date());
+    const rp = o.realpath ?? fs.realpathSync;
+    const log = o.log ?? (() => { });
+    // At most ONE pending request per project (a flood must not wear the person down); in memory only, so a restart clears them.
+    const pending = new Map();
+    /** The store file of a project, or null for an id that is not a plain project name (`..`, a slash, a long name). */
+    function fileFor(projectId) {
+        if (typeof projectId !== "string" || !PROJECT_ID_RE.test(projectId))
+            return null;
+        const f = path.join(storeFolder(o.stateDir), projectId, "granted-settings.json");
+        return f.startsWith(storeFolder(o.stateDir) + path.sep) ? f : null;
+    }
+    /** Every entry in a project's file, unchecked. A missing, unreadable or malformed file gives none (fail closed). */
+    function readAll(projectId) {
+        const f = fileFor(projectId);
+        if (!f)
+            return [];
+        try {
+            const j = JSON.parse(fs.readFileSync(f, "utf8"));
+            return j && j.version === 1 && Array.isArray(j.grants) ? j.grants : [];
+        }
+        catch {
+            return [];
+        }
+    }
+    function writeAll(projectId, grants) {
+        const f = fileFor(projectId);
+        if (!f)
+            throw new Error("bad project id");
+        fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 });
+        const tmp = `${f}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, JSON.stringify({ version: 1, grants }, null, 2), { mode: 0o600 });
+        fs.renameSync(tmp, f);
+    }
+    return {
+        /** The entries a turn for this project is built from. They are checked again by applyGrants; this only reads. */
+        grantsFor(project) {
+            return readAll(project.id);
+        },
+        /** Grants of one project as the app shows them: only entries that pass the check now (a dropped one is not shown as active). */
+        listGrants(project) {
+            return readAll(project.id).filter((g) => recheck(g, project, rp) !== null);
+        },
+        /** The request tool: validates, then keeps the request pending. It can neither grant nor write the store. */
+        request(project, req, turnId) {
+            const v = validateRequest(req, project, rp);
+            if (!v.ok)
+                return { status: "refused", reason: v.reason, allowed: ALLOWED_LIST };
+            const reason = cleanReason(req.reason);
+            const have = pending.get(project.id);
+            if (have) {
+                // The same request again is merged into the one that waits; a different one waits its turn.
+                if (have.hash === v.hash)
+                    return { status: "pending", requestId: have.requestId, merged: true };
+                return { status: "refused", reason: "Another request for this project is already waiting for the person's approval. Stop this turn and say what is blocked.", allowed: ALLOWED_LIST };
+            }
+            if (readAll(project.id).length >= MAX_GRANTS_PER_PROJECT)
+                return { status: "refused", reason: "This project already has the most grants it can hold.", allowed: ALLOWED_LIST };
+            const p = {
+                requestId: crypto.randomBytes(12).toString("hex"), nonce: crypto.randomBytes(16).toString("hex"), hash: v.hash, reason, turnId,
+                createdAt: now().toISOString(), project, normalized: v.normalized,
+            };
+            pending.set(project.id, p);
+            return { status: "pending", requestId: p.requestId, merged: false };
+        },
+        /** What the app shows on a card: the exact setting and value, the reason, and the nonce and hash it must send back. */
+        listRequests(projectId) {
+            const p = pending.get(projectId);
+            return p ? [p] : [];
+        },
+        /** The person's approval. Needs the nonce and the hash of the pending request; works once. A refusal leaves the request pending. */
+        grant(requestId, nonce, hash, by) {
+            const p = [...pending.values()].find((x) => typeof requestId === "string" && eq(x.requestId, requestId));
+            if (!p)
+                return { ok: false, status: 404, error: "No such pending request." };
+            if (typeof nonce !== "string" || !eq(p.nonce, nonce))
+                return { ok: false, status: 403, error: "The nonce does not match this request." };
+            if (typeof hash !== "string" || !eq(p.hash, hash))
+                return { ok: false, status: 409, error: "The request is not the one that was shown." };
+            const g = {
+                id: crypto.randomBytes(12).toString("hex"), projectId: p.project.id, folderId: p.project.folderId, normalized: p.normalized, hash: p.hash,
+                grantedAt: now().toISOString(), grantedBy: by.slice(0, 16), bridgeVersion: o.bridgeVersion, scope: GRANT_SCOPE,
+            };
+            try {
+                const rest = readAll(p.project.id).filter((e) => e?.hash !== p.hash);
+                writeAll(p.project.id, [...rest, g]);
+            }
+            catch (e) {
+                log(`setting grant not saved: ${e.message}`);
+                return { ok: false, status: 500, error: "The grant could not be saved on this computer." };
+            }
+            pending.delete(p.project.id); // the nonce is used up with the request
+            return { ok: true, grant: g };
+        },
+        /** The person's "no": drops the pending request so a new one can be made. */
+        decline(requestId) {
+            for (const [k, p] of pending)
+                if (typeof requestId === "string" && eq(p.requestId, requestId)) {
+                    pending.delete(k);
+                    return true;
+                }
+            return false;
+        },
+        /** Removes one grant by id from whichever project holds it. The next turn is built without it. */
+        revoke(grantId) {
+            if (typeof grantId !== "string" || !/^[0-9a-f]{24}$/.test(grantId))
+                return false;
+            let dirs = [];
+            try {
+                dirs = fs.readdirSync(storeFolder(o.stateDir));
+            }
+            catch {
+                return false;
+            }
+            for (const d of dirs) {
+                const all = readAll(d);
+                const keep = all.filter((e) => e?.id !== grantId);
+                if (keep.length === all.length)
+                    continue;
+                try {
+                    writeAll(d, keep);
+                }
+                catch (e) {
+                    log(`grant not removed: ${e.message}`);
+                    return false;
+                }
+                return true;
+            }
+            return false;
+        },
+    };
+}
+
+return { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting };
+})();
+// Setting grants (0.4.1): the allow-list and its checks are exported so the tests (and the app's tooling) use the very code the bridge runs.
+export { ALLOWED, ALLOWED_LIST, DOMAIN_CATALOG, NEVER_SETTINGS, applyGrants, createGrantBook, hashOf, mergeGrant, neverReason, storeFolder, validateRequest, validateSetting };
 export const WEB_SCOPES = ["once", "turn"];
 /** A count the page may be shown: a finite integer from 0 to 1e9. Anything else is left out. */
 const USAGE_MAX = 1_000_000_000;
@@ -650,7 +1026,7 @@ function turnUsage(modelUsage, reportedModel, lastStep) {
 }
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.4.0";
+export const BRIDGE_BUILD = "0.4.1";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -1768,6 +2144,18 @@ export function checkSubscriptionLogin(claudeBin = "claude", env = process.env, 
 export const APPROVAL_WAIT_MS = 10 * 60 * 1000;
 /** The one extra tool of the per-turn MCP server in an each-write code turn: Claude Code asks it before a write or a command. */
 export const APPROVE_TOOL = "bridge_approve";
+/** The one tool a sandboxed code turn in a project has to ASK for a wider setting (0.4.1). It can only ask: approval comes from the app, never from the chat. */
+export const REQUEST_SETTING_TOOL = "request_setting";
+/** No approve, grant or confirm field: the request carries what is wanted and why, nothing that could approve it. */
+export const requestSettingSchema = {
+    type: "object", additionalProperties: false, required: ["setting", "value", "reason"],
+    properties: {
+        setting: { type: "string", enum: Object.keys(ALLOWED), description: "The one sandbox setting to widen." },
+        value: { description: "true for sandbox.network.allowLocalBinding; the path of one socket inside the project for sandbox.network.allowUnixSockets; one host from the list for sandbox.network.allowedDomains." },
+        reason: { type: "string", description: "One short sentence: what is blocked and why you need this." },
+    },
+};
+const requestSettingDescription = `Ask the person to widen ONE sandbox setting for this project. You cannot grant it yourself: the person approves in the app, then the next turn has it. Allowed: ${ALLOWED_LIST.join(" | ")}. After asking, stop this turn and say what is blocked.`;
 const approveSchema = { type: "object", properties: { tool_name: { type: "string" }, input: { type: "object" }, tool_use_id: { type: "string" } }, required: ["tool_name", "input"] };
 export const CODE_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"];
 /** Native Windows runs a reduced code mode: files only, no commands (and so no sandbox to start). */
@@ -2074,7 +2462,7 @@ export function fileToolDenyRules(places) {
     return withRealPaths(places).flatMap((p) => ["Read", "Edit"].flatMap((t) => [`${t}(/${p})`, `${t}(/${p}/**)`]));
 }
 /** The Claude Code settings a code turn runs with (passed inline with --settings, never a file in the folder). */
-export function codeTurnSettings(home, platform, extraDenyRead = [], approval = "session", claudeConfigDir = "", delegate = false) {
+export function codeTurnSettings(home, platform, extraDenyRead = [], approval = "session", claudeConfigDir = "", delegate = false, storeDeny = []) {
     // sandbox paths are home-relative (`~/`), which Claude Code expands itself; the file-tool rules need absolute paths, so they use `home`
     const fileRules = fileToolDenyRules([...credentialPlaces(home, platform, claudeConfigDir), ...extraDenyRead.filter((p) => path.isAbsolute(p) || /^[A-Za-z]:[\\/]/.test(p))]);
     const agentDeny = delegate ? SUBAGENT_TOOL_NAMES.flatMap((n) => BUILTIN_AGENT_TYPES.map((t) => `${n}(${t})`)) : [];
@@ -2094,7 +2482,8 @@ export function codeTurnSettings(home, platform, extraDenyRead = [], approval = 
                 allowLocalBinding: true,
                 allowedDomains: ["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org", "codeload.github.com", "raw.githubusercontent.com"],
             },
-            filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir)] },
+            // storeDeny (0.4.1) is the bridge's grant store: a command may neither read nor write it, so it cannot plant or edit a grant.
+            filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir), ...storeDeny], ...(storeDeny.length > 0 ? { denyWrite: [...storeDeny] } : {}) },
         },
         permissions: {
             deny: [...agentDeny, ...fileRules],
@@ -3667,6 +4056,19 @@ export function createBridge(opts = {}) {
     const sandboxTmpDirs = () => [...new Set([os.tmpdir(), envGet(env, "TMPDIR") ?? ""].filter((x) => x && path.isAbsolute(x)))];
     /** 0.3.13: computer mode on macOS and Linux runs inside Claude Code's OS sandbox (Windows has none, so every call is asked there). Decided by the turn's own copy of the mode. */
     const sandboxedTurn = (t) => t.computer && codePlatform !== "win32" && t.code && t.approval === "session";
+    // --- Setting grants (0.4.1) ---
+    // Needs the bridge's own state folder: the grants are kept there, where a code turn can neither read nor write (denyRead, denyWrite).
+    const grantBook = opts.stateDir ? createGrantBook({ stateDir: path.resolve(opts.stateDir), bridgeVersion: BRIDGE_BUILD, log }) : null;
+    /** The folders that hold the grants, as the path is written and as the disk resolves it. Denied for write (and read) in both sandbox modes. */
+    const grantStoreDeny = opts.stateDir ? [...new Set([storeFolder(path.resolve(opts.stateDir)), storeFolder(resolveThroughLinks(path.resolve(opts.stateDir)))])] : [];
+    const projectRefOf = (t) => (t.proj ? { id: t.proj.name, folderId: t.proj.id, root: t.proj.path } : null);
+    /** Does this turn get the request tool? A top code turn inside a project, running inside the OS sandbox. */
+    const settingTurn = (t) => grantBook !== null && t.code && !t.parent && t.proj !== null && (t.computer ? sandboxedTurn(t) : !t.filesOnly && codePlatform !== "win32");
+    /** The turn's settings with this project's grants applied (read afresh from disk, every one checked again). */
+    const withGrants = (t, base, mode) => {
+        const ref = projectRefOf(t);
+        return grantBook && ref ? applyGrants(base, grantBook.grantsFor(ref), mode, ref) : base;
+    };
     const protectOpts = (t) => ({ home, places: [...new Set([...protectedPlaces(home, protectedExtra), ...credentialPlaces(home, codePlatform, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")])], base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
     /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
     const idOf = (p) => {
@@ -4307,6 +4709,18 @@ export function createBridge(opts = {}) {
         pairFailures = 0;
         log(`Pairing code: ${pairingCode}`);
     }
+    /** What `request_setting` answers the agent. Never holds the nonce or the hash; those go to the app only. */
+    function requestSettingFor(turn, args) {
+        const ref = projectRefOf(turn);
+        if (!grantBook || !ref || !turn.proj)
+            return { text: "This turn cannot ask for a setting.", isError: true };
+        if (idOf(turn.proj.path) !== turn.proj.id)
+            return { text: "The project folder changed on disk, so this turn cannot ask for a setting.", isError: true };
+        const r = grantBook.request(ref, args, turn.id);
+        if (r.status === "refused")
+            return { text: `Refused: ${r.reason}\nAllowed:\n${r.allowed.join("\n")}`, isError: true };
+        return { text: "Pending the person's approval in the app. Stop this turn now and say what is blocked; the person approves in the app, and the next turn has it.", isError: false };
+    }
     // ---- MCP server (one per turn), spoken to by `claude` over HTTP on 127.0.0.1 ----------------------------------
     function mcpReply(turn, msg) {
         const { id, method, params } = msg;
@@ -4326,12 +4740,13 @@ export function createBridge(opts = {}) {
         if (method === "tools/list") {
             return ok({
                 tools: [
-                    ...turn.tools.map((t) => ({
+                    ...turn.tools.filter((t) => !(settingTurn(turn) && t.name === REQUEST_SETTING_TOOL)).map((t) => ({
                         name: t.name,
                         description: t.description ?? "",
                         inputSchema: t.inputSchema ?? { type: "object", properties: {} },
                     })),
                     ...(askingTurn ? [{ name: APPROVE_TOOL, description: "Permission prompt tool: decides whether Claude Code may run a tool.", inputSchema: approveSchema }] : []),
+                    ...(settingTurn(turn) ? [{ name: REQUEST_SETTING_TOOL, description: requestSettingDescription, inputSchema: requestSettingSchema }] : []),
                 ],
             });
         }
@@ -4340,6 +4755,11 @@ export function createBridge(opts = {}) {
             // The bridge answers this one itself: never relayed to the page, never counted against the tool budget.
             if (askingTurn && name === APPROVE_TOOL) {
                 return decideApproval(turn, (params?.arguments ?? {})).then((d) => ok({ content: [{ type: "text", text: JSON.stringify(d) }] }));
+            }
+            // Also answered by the bridge itself. It can only ASK: it saves one pending request and never touches a grant.
+            if (name === REQUEST_SETTING_TOOL && settingTurn(turn)) {
+                const text = requestSettingFor(turn, params?.arguments);
+                return Promise.resolve(ok({ content: [{ type: "text", text: text.text }], isError: text.isError }));
             }
             if (!turn.tools.some((t) => t.name === name))
                 return Promise.resolve(bad(-32602, `Unknown tool ${name}`));
@@ -5111,7 +5531,7 @@ export function createBridge(opts = {}) {
             "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
             "--permission-prompts", "host",
             "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
-            "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, protectedExtra), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)], envGet(env, "CLAUDE_CONFIG_DIR") ?? "") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
+            "--settings", JSON.stringify(sandboxedTurn(turn) ? withGrants(turn, computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, protectedExtra), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home), ...grantStoreDeny], envGet(env, "CLAUDE_CONFIG_DIR") ?? ""), "computer") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
             "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n", turn.preview)}`,
             "--system-prompt-snapshot", "off",
         ];
@@ -5150,7 +5570,7 @@ export function createBridge(opts = {}) {
             "--permission-prompts", turn.approval === "each-write" || !filesOnly ? "host" : "none",
             ...(turn.approval === "each-write" || !filesOnly ? ["--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`] : []),
             "--disable-slash-commands",
-            "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, [...(opts.extraDenyRead ?? []), ...stateProtected], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "", turn.delegate)),
+            "--settings", JSON.stringify(withGrants(turn, codeTurnSettings(os.homedir(), codePlatform, [...(opts.extraDenyRead ?? []), ...stateProtected], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "", turn.delegate, grantStoreDeny), "folder")),
             "--system-prompt", turn.system,
             "--system-prompt-snapshot", "off",
             "--append-system-prompt", turn.proj
@@ -5863,6 +6283,46 @@ export function createBridge(opts = {}) {
         }
         out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
         return json(res, 200, { projects: out.slice(0, PROJECT_LIST_CAP) });
+    }
+    // ---- setting grants (0.4.1): the app's routes. Only a paired app reaches them; nothing the chat session can call grants. ----------------
+    /** POST /v1/settings/{requests,grant,decline,grants,revoke}. The bridge's own part of the approval: it holds the pending request, the nonce and the hash. */
+    async function handleSettings(req, res, route) {
+        if (!grantBook)
+            return json(res, 409, { error: "This bridge has no state folder, so it cannot keep setting grants.", code: "NoStateFolder" });
+        let body;
+        try {
+            body = await readBody(req);
+        }
+        catch (e) {
+            return json(res, e.status ?? 400, { error: e.message });
+        }
+        // A project is named as /v1/projects lists it; `..`, a slash or any path text is not a name and finds nothing.
+        const project = () => {
+            const p = resolveProject(body.project);
+            return p ? { id: p.name, folderId: p.id, root: p.path } : null;
+        };
+        if (route === "/v1/settings/requests") {
+            const ref = project();
+            if (!ref)
+                return json(res, 400, { error: NO_SUCH_PROJECT });
+            // The card needs the exact value, the reason, and the nonce and hash it sends back with its click.
+            return json(res, 200, { requests: grantBook.listRequests(ref.id).map((r) => ({ requestId: r.requestId, nonce: r.nonce, hash: r.hash, setting: r.normalized.setting, value: r.normalized.value, reason: r.reason, createdAt: r.createdAt, project: r.project.id })) });
+        }
+        if (route === "/v1/settings/grants") {
+            const ref = project();
+            if (!ref)
+                return json(res, 400, { error: NO_SUCH_PROJECT });
+            return json(res, 200, { grants: grantBook.listGrants(ref) });
+        }
+        if (route === "/v1/settings/grant") {
+            const r = grantBook.grant(body.requestId, body.nonce, body.hash, callerKey(req));
+            return r.ok ? json(res, 200, { grant: r.grant }) : json(res, r.status, { error: r.error });
+        }
+        if (route === "/v1/settings/decline")
+            return grantBook.decline(body.requestId) ? json(res, 200, { ok: true }) : json(res, 404, { error: "No such pending request." });
+        if (route === "/v1/settings/revoke")
+            return grantBook.revoke(body.grantId) ? json(res, 200, { ok: true }) : json(res, 404, { error: "No such grant." });
+        return json(res, 404, { error: "No such route." });
     }
     /** The names /v1/projects lists now: direct subfolders of the code folder that are real directories, not links, with an allowed name. */
     function projectNames() {
@@ -6721,6 +7181,8 @@ export function createBridge(opts = {}) {
                 a.settle(body.allow, undefined, body.scope === "turn" ? "turn" : "once");
                 return json(res, 200, { ok: true });
             }
+            if (req.method === "POST" && url.pathname.startsWith("/v1/settings/"))
+                return handleSettings(req, res, url.pathname);
             if (req.method === "POST" && url.pathname === "/v1/tool-result") {
                 let body;
                 try {

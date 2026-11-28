@@ -67,6 +67,36 @@ function timeLineBlock() {
   return block;
 }
 
+/**
+ * src/settingGrants.ts is inlined the same way (the built bridge is one file). bridge.ts imports its names with ONE line,
+ * `import { a, b } from "./settingGrants.js";`; the build replaces it with `const { a, b } = (() => { <file>; return { a, b }; })();`.
+ * The file's own imports (fs, path, crypto) are dropped because bridge.ts already has them in scope; any other import fails the build.
+ */
+export const SETTING_GRANTS_MARKER = "/* inlined from src/settingGrants.ts by build-bridge.mjs; do not edit */";
+const SETTING_GRANTS_IMPORT = /^import \{([^}]*)\} from "\.\/settingGrants\.js";[ \t]*\n/m;
+const SETTING_GRANTS_KEEP = new Set(["node:fs", "node:path", "node:crypto"]);
+
+function settingGrantsBlock(names) {
+  const file = join(root, "src", "settingGrants.ts");
+  if (!existsSync(file)) throw new Error(`setting grants inline: ${file} is missing`);
+  let js = ts.transpileModule(readFileSync(file, "utf8"), { fileName: "src/settingGrants.ts", compilerOptions: COMPILER_OPTIONS }).outputText;
+  js = js.replace(/^import\s[^;]*?from\s+"([^"]+)";[ \t]*\n/gm, (all, from) => {
+    if (!SETTING_GRANTS_KEEP.has(from)) throw new Error(`setting grants inline: settingGrants.ts imports "${from}", which the build cannot inline (only fs, path, crypto)`);
+    return "";
+  });
+  js = js.replace(/^export (?=(?:async |const |let |var |function|class |enum ))/gm, "");
+  const left = /^(import|export) /m.exec(js);
+  if (left) throw new Error(`setting grants inline: settingGrants.ts still has "${left[1]} " at the start of a line after stripping`);
+  const list = names.join(", ");
+  const block = `const { ${list} } = (() => { ${SETTING_GRANTS_MARKER}\n${js}\nreturn { ${list} };\n})();`;
+  try {
+    new Function("fs", "path", "crypto", block.slice(block.indexOf("=> {") + 4, block.lastIndexOf("\nreturn {")) + `\nreturn { ${list} };`);
+  } catch (e) {
+    throw new Error(`setting grants inline: the inlined block does not parse or a name is missing: ${e instanceof Error ? e.message : e}`);
+  }
+  return block;
+}
+
 const TARGETS = [
   { from: "src/bridge.ts", to: "bridge/bridge.mjs" },
   // The plugin imports the bridge by its source name; in the built folder that file is bridge.mjs.
@@ -85,6 +115,13 @@ export function buildAll() {
       if (js.split(TIME_LINE_IMPORT).length !== 2) throw new Error(`${t.from}: expected the line ${TIME_LINE_IMPORT} exactly once`);
       const block = timeLineBlock();
       js = js.replace(TIME_LINE_IMPORT, () => block);
+    }
+    if (t.from === "src/bridge.ts") {
+      const m = SETTING_GRANTS_IMPORT.exec(js);
+      if (!m || js.split('from "./settingGrants.js"').length !== 2) throw new Error(`${t.from}: expected one import { ... } from "./settingGrants.js"`);
+      const names = m[1].split(",").map((x) => x.trim()).filter(Boolean);
+      const block = settingGrantsBlock(names);
+      js = js.replace(SETTING_GRANTS_IMPORT, () => block + "\n");
     }
     if (t.swap) {
       if (js.split(t.swap[0]).length !== 2) throw new Error(`${t.from}: expected ${t.swap[0]} exactly once`);
