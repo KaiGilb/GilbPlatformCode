@@ -841,7 +841,12 @@ const eq = (a, b) => {
     const h = (s) => crypto.createHash("sha256").update(s).digest();
     return crypto.timingSafeEqual(h(a), h(b));
 };
-/** The grant store and the pending requests of one bridge. Reads the file afresh on every call: nothing is cached, so a removed grant is gone at once. */
+/**
+ * The grant store and the pending requests of one bridge. The bridge is the ONLY legitimate writer of the store, so the secret and every project's
+ * entries are read from disk ONCE, by `load()` at start (after the start checks pass), and every later read uses that copy in memory. A grant or a
+ * revoke changes memory first and then writes the file (temp file in the same folder, then rename, mode 0600); a file edited while the bridge runs is
+ * never read. Before `load()` the book holds nothing.
+ */
 function createGrantBook(o) {
     const now = o.now ?? (() => new Date());
     const rp = o.realpath ?? defaultRp;
@@ -851,7 +856,10 @@ function createGrantBook(o) {
     // How many request_setting calls each running turn has made (refused ones too); a turn's count is dropped when the turn ends.
     const calls = new Map();
     const secretFile = path.join(storeFolder(o.stateDir), SECRET_FILE);
-    /** The install's secret, or null if there is none yet or the file is not 32 bytes (then no entry can verify). Read afresh each time. */
+    // The copy in memory: the secret (null until one exists) and each project's entries.
+    let keyMem = null;
+    let grantsMem = new Map();
+    /** The install's secret from disk, or null if there is none yet or the file is not 32 bytes (then no entry can verify). Used by load() only. */
     function readKey() {
         const b = readFileSafe(secretFile, 32);
         return b && b.length === 32 ? b : null;
@@ -900,16 +908,12 @@ function createGrantBook(o) {
             }
         }
     }
-    /** The secret, made once (random, 0600) when the first grant is saved. A file of the wrong size is replaced: what it sealed is gone. */
-    function keyForSaving() {
-        const have = readKey();
-        if (have)
-            return have;
-        fs.mkdirSync(path.dirname(secretFile), { recursive: true, mode: 0o700 });
-        fs.rmSync(secretFile, { force: true });
-        const k = crypto.randomBytes(32);
-        fs.writeFileSync(secretFile, k, { mode: 0o600, flag: "wx" });
-        return k;
+    /** Writes a whole file the safe way: a temp file in the same folder (mode 0600), then a rename over the name. */
+    function writeFileAtomic(f, data) {
+        fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 });
+        const tmp = `${f}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, data, { mode: 0o600 });
+        fs.renameSync(tmp, f);
     }
     /** Drops a request that has waited too long. */
     function sweep() {
@@ -925,8 +929,12 @@ function createGrantBook(o) {
         const f = path.join(storeFolder(o.stateDir), projectId, "granted-settings.json");
         return f.startsWith(storeFolder(o.stateDir) + path.sep) ? f : null;
     }
-    /** Every entry in a project's file, unchecked. A missing, unreadable or malformed file gives none (fail closed). */
+    /** Every entry of a project, unchecked, from memory. */
     function readAll(projectId) {
+        return grantsMem.get(projectId) ?? [];
+    }
+    /** Every entry in a project's file on disk, unchecked. A missing, unreadable or malformed file gives none (fail closed). Used by load() only. */
+    function readDisk(projectId) {
         const f = fileFor(projectId);
         if (!f)
             return [];
@@ -946,23 +954,33 @@ function createGrantBook(o) {
         if (!f)
             throw new Error("bad project id");
         fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 });
-        const tmp = `${f}.${process.pid}.tmp`;
-        fs.writeFileSync(tmp, JSON.stringify({ version: 1, grants }, null, 2), { mode: 0o600 });
-        fs.renameSync(tmp, f);
+        writeFileAtomic(f, JSON.stringify({ version: 1, grants }, null, 2));
     }
     return {
+        /** Reads the secret and every project's file from disk into memory (the only disk read of the store). Call once at start, after the start checks. */
+        load() {
+            keyMem = readKey();
+            grantsMem = new Map();
+            let dirs = [];
+            try {
+                dirs = fs.readdirSync(storeFolder(o.stateDir));
+            }
+            catch { /* no store yet */ }
+            for (const d of dirs)
+                if (PROJECT_ID_RE.test(d))
+                    grantsMem.set(d, readDisk(d));
+        },
         /** The entries a turn for this project is built from. They are checked again by applyGrants; this only reads. */
         grantsFor(project) {
             return readAll(project.id);
         },
         /** The secret that seals this install's grants, for applyGrants; null until the first grant is saved. */
         key() {
-            return readKey();
+            return keyMem;
         },
         /** Grants of one project as the app shows them: only entries that pass the check now (a dropped one is not shown as active). */
         listGrants(project) {
-            const key = readKey();
-            return readAll(project.id).filter((g) => recheck(g, project, key, rp) !== null);
+            return readAll(project.id).filter((g) => recheck(g, project, keyMem, rp) !== null);
         },
         /** The request tool: validates, then keeps the request pending. It can neither grant nor write the store. */
         request(project, req, turnId) {
@@ -992,8 +1010,7 @@ function createGrantBook(o) {
                 pending.delete(project.id);
             }
             // Only entries that still pass the check count: dead ones (a lost secret, a recreated folder) must not fill the cap. Nothing is pruned here.
-            const liveKey = readKey();
-            if (readAll(project.id).filter((e) => recheck(e, project, liveKey, rp) !== null).length >= MAX_GRANTS_PER_PROJECT)
+            if (readAll(project.id).filter((e) => recheck(e, project, keyMem, rp) !== null).length >= MAX_GRANTS_PER_PROJECT)
                 return { status: "refused", reason: "This project already has the most grants it can hold.", allowed: ALLOWED_LIST };
             const p = {
                 requestId: crypto.randomBytes(12).toString("hex"), nonce: crypto.randomBytes(16).toString("hex"), hash: v.hash, reason, turnId,
@@ -1022,14 +1039,26 @@ function createGrantBook(o) {
                 id: crypto.randomBytes(12).toString("hex"), projectId: p.project.id, folderId: p.project.folderId, normalized: p.normalized, hash: p.hash, mac: "",
                 grantedAt: now().toISOString(), grantedBy: by.slice(0, 16), bridgeVersion: o.bridgeVersion, scope: GRANT_SCOPE,
             };
+            const oldKey = keyMem;
+            const oldList = grantsMem.get(p.project.id);
             try {
-                const key = keyForSaving();
+                // Memory first, then the file; if the file cannot be written, memory goes back as it was.
+                const key = keyMem ?? crypto.randomBytes(32);
                 g.mac = macOf(key, g);
-                // Writing is when dead entries (they fail the check) are dropped; a read never changes the file.
+                // Saving is when dead entries (they fail the check) are dropped.
                 const rest = readAll(p.project.id).filter((e) => e?.hash !== p.hash && recheck(e, p.project, key, rp) !== null);
+                keyMem = key;
+                grantsMem.set(p.project.id, [...rest, g]);
+                if (!oldKey)
+                    writeFileAtomic(secretFile, key);
                 writeAll(p.project.id, [...rest, g]);
             }
             catch (e) {
+                keyMem = oldKey;
+                if (oldList)
+                    grantsMem.set(p.project.id, oldList);
+                else
+                    grantsMem.delete(p.project.id);
                 log(`setting grant not saved: ${e.message}`);
                 return { ok: false, status: 500, error: "The grant could not be saved on this computer." };
             }
@@ -1057,22 +1086,16 @@ function createGrantBook(o) {
         revoke(grantId) {
             if (typeof grantId !== "string" || !/^[0-9a-f]{24}$/.test(grantId))
                 return false;
-            let dirs = [];
-            try {
-                dirs = fs.readdirSync(storeFolder(o.stateDir));
-            }
-            catch {
-                return false;
-            }
-            for (const d of dirs) {
-                const all = readAll(d);
+            for (const [d, all] of grantsMem) {
                 const keep = all.filter((e) => e?.id !== grantId);
                 if (keep.length === all.length)
                     continue;
+                grantsMem.set(d, keep); // memory first, then the file; back again if the file cannot be written
                 try {
                     writeAll(d, keep);
                 }
                 catch (e) {
+                    grantsMem.set(d, all);
                     log(`grant not removed: ${e.message}`);
                     return false;
                 }
@@ -4284,11 +4307,19 @@ export function createBridge(opts = {}) {
         }
     };
     const stateIds = opts.stateDir ? [folderIdNow(stateRealAtStart), folderIdNow(storeFolder(stateRealAtStart))] : [null, null];
-    let stateSwapWarned = false;
-    const grantsOff = () => {
+    /** Once any check has failed, setting grants stay off until the bridge restarts, even if the check would pass again (a folder swapped away and back). */
+    let grantsLatched = "";
+    const latchGrantsOff = (why) => {
+        if (!grantsLatched) {
+            grantsLatched = why;
+            log(`Setting grants are off: ${why}`);
+        }
+        return grantsLatched;
+    };
+    /** The checks themselves, asked afresh at every use (no remembered "ok"): a link can be re-pointed at any time. `ids` = also compare the folders' device:inode with start. */
+    const grantsOffCore = (ids) => {
         if (!opts.stateDir)
             return "";
-        // Asked afresh at every use (no remembered "ok"): a link can be re-pointed at any time.
         const areas = opts.sandboxWritableAreas ?? writableAreas(home, workspace?.path ?? "", sandboxTmpDirs());
         const why = stateDirProblem(path.resolve(opts.stateDir), workspace?.path || undefined, home, platform, undefined, [...areas, ...areas.map((a) => (a ? resolveThroughLinks(a) : a))]);
         if (why)
@@ -4297,17 +4328,19 @@ export function createBridge(opts = {}) {
             return `The state folder ${opts.stateDir} now leads to a different place than when the bridge started (a link was changed), so no stored grant can be trusted. Restart the bridge.`;
         // The state folder and its projects folder must still be the very folders seen at start (device:inode, looked at without following a link, and plain
         // directories): a swap of the folder itself or of any folder above it shows here, whatever name the path still has.
-        const now = [folderIdNow(stateRealAtStart), folderIdNow(storeFolder(stateRealAtStart))];
-        if (stateIds[1] === null && now[1] !== null && now[0] === stateIds[0])
-            stateIds[1] = now[1]; // the bridge made it itself, on the first grant
-        if (now[0] === null || now[0] !== stateIds[0] || (stateIds[1] !== null && now[1] !== stateIds[1])) {
-            if (!stateSwapWarned) {
-                stateSwapWarned = true;
-                log(`Setting grants are off: the state folder ${opts.stateDir} (or its projects folder) is no longer the folder the bridge started with.`);
-            }
-            return `The state folder ${opts.stateDir} (or its projects folder) is no longer the folder the bridge started with, so no stored grant can be trusted. Restart the bridge.`;
+        if (ids) {
+            const now = [folderIdNow(stateRealAtStart), folderIdNow(storeFolder(stateRealAtStart))];
+            if (now[0] === null || now[0] !== stateIds[0] || now[1] === null || now[1] !== stateIds[1])
+                return `The state folder ${opts.stateDir} (or its projects folder) is no longer the folder the bridge started with, so no stored grant can be trusted. Restart the bridge.`;
         }
         return "";
+    };
+    /** Why setting grants are off, or "". The first failure latches: grants stay off (tool not offered, routes 409, nothing applied) until the bridge restarts. */
+    const grantsOff = () => {
+        if (grantsLatched)
+            return grantsLatched;
+        const why = grantsOffCore(true);
+        return why ? latchGrantsOff(why) : "";
     };
     /** Does this turn get the request tool? A top code turn inside a project, running inside the OS sandbox. */
     const settingTurn = (t) => grantBook !== null && grantsOff() === "" && t.code && !t.parent && t.proj !== null && (t.computer ? sandboxedTurn(t) : !t.filesOnly && codePlatform !== "win32");
@@ -6567,8 +6600,6 @@ export function createBridge(opts = {}) {
         }
         if (route === "/v1/settings/grant") {
             const r = grantBook.grant(body.requestId, body.nonce, body.hash, callerKey(req));
-            if (r.ok)
-                grantsOff(); // the first grant made the projects folder: its identity is taken now, before anything else can touch it
             return r.ok ? json(res, 200, { grant: r.grant }) : json(res, r.status, { error: r.error });
         }
         if (route === "/v1/settings/decline")
@@ -7629,9 +7660,26 @@ export function createBridge(opts = {}) {
             return accessSource;
         },
         async start() {
-            const off = grantsOff();
-            if (off)
-                log(`Setting grants are off: ${off}`);
+            // Setting grants start here, after every start check: the projects folder is made now (so its identity is taken before any turn runs), and the
+            // secret and the stored grants are read from disk this once. They are never read from disk again until the next start.
+            if (grantBook && opts.stateDir) {
+                let off = grantsOffCore(false);
+                if (!off) {
+                    try {
+                        fs.mkdirSync(storeFolder(stateRealAtStart), { recursive: true, mode: 0o700 });
+                    }
+                    catch { /* the check below says so */ }
+                    stateIds[1] = folderIdNow(storeFolder(stateRealAtStart));
+                    if (stateIds[1] === null)
+                        off = `The projects folder in ${opts.stateDir} could not be made, or is not a plain folder.`;
+                    else
+                        off = grantsOffCore(true);
+                }
+                if (off)
+                    latchGrantsOff(off);
+                else
+                    grantBook.load();
+            }
             fs.mkdirSync(workDir, { recursive: true, mode: 0o700 });
             await takeLock(); // one bridge per state folder: a second refuses here
             sweepSnapshots(); // the lock is ours, so no other bridge's snapshots are here

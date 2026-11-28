@@ -299,7 +299,12 @@ const eq = (a: string, b: string) => {
   return crypto.timingSafeEqual(h(a), h(b));
 };
 
-/** The grant store and the pending requests of one bridge. Reads the file afresh on every call: nothing is cached, so a removed grant is gone at once. */
+/**
+ * The grant store and the pending requests of one bridge. The bridge is the ONLY legitimate writer of the store, so the secret and every project's
+ * entries are read from disk ONCE, by `load()` at start (after the start checks pass), and every later read uses that copy in memory. A grant or a
+ * revoke changes memory first and then writes the file (temp file in the same folder, then rename, mode 0600); a file edited while the bridge runs is
+ * never read. Before `load()` the book holds nothing.
+ */
 export function createGrantBook(o: GrantBookOptions) {
   const now = o.now ?? (() => new Date());
   const rp = o.realpath ?? defaultRp;
@@ -309,8 +314,11 @@ export function createGrantBook(o: GrantBookOptions) {
   // How many request_setting calls each running turn has made (refused ones too); a turn's count is dropped when the turn ends.
   const calls = new Map<string, number>();
   const secretFile = path.join(storeFolder(o.stateDir), SECRET_FILE);
+  // The copy in memory: the secret (null until one exists) and each project's entries.
+  let keyMem: Buffer | null = null;
+  let grantsMem = new Map<string, unknown[]>();
 
-  /** The install's secret, or null if there is none yet or the file is not 32 bytes (then no entry can verify). Read afresh each time. */
+  /** The install's secret from disk, or null if there is none yet or the file is not 32 bytes (then no entry can verify). Used by load() only. */
   function readKey(): Buffer | null {
     const b = readFileSafe(secretFile, 32);
     return b && b.length === 32 ? b : null;
@@ -344,15 +352,12 @@ export function createGrantBook(o: GrantBookOptions) {
       if (fd >= 0) { try { fs.closeSync(fd); } catch { /* closed anyway */ } }
     }
   }
-  /** The secret, made once (random, 0600) when the first grant is saved. A file of the wrong size is replaced: what it sealed is gone. */
-  function keyForSaving(): Buffer {
-    const have = readKey();
-    if (have) return have;
-    fs.mkdirSync(path.dirname(secretFile), { recursive: true, mode: 0o700 });
-    fs.rmSync(secretFile, { force: true });
-    const k = crypto.randomBytes(32);
-    fs.writeFileSync(secretFile, k, { mode: 0o600, flag: "wx" });
-    return k;
+  /** Writes a whole file the safe way: a temp file in the same folder (mode 0600), then a rename over the name. */
+  function writeFileAtomic(f: string, data: string | Buffer): void {
+    fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 });
+    const tmp = `${f}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, data, { mode: 0o600 });
+    fs.renameSync(tmp, f);
   }
   /** Drops a request that has waited too long. */
   function sweep(): void {
@@ -366,8 +371,12 @@ export function createGrantBook(o: GrantBookOptions) {
     const f = path.join(storeFolder(o.stateDir), projectId, "granted-settings.json");
     return f.startsWith(storeFolder(o.stateDir) + path.sep) ? f : null;
   }
-  /** Every entry in a project's file, unchecked. A missing, unreadable or malformed file gives none (fail closed). */
+  /** Every entry of a project, unchecked, from memory. */
   function readAll(projectId: string): unknown[] {
+    return grantsMem.get(projectId) ?? [];
+  }
+  /** Every entry in a project's file on disk, unchecked. A missing, unreadable or malformed file gives none (fail closed). Used by load() only. */
+  function readDisk(projectId: string): unknown[] {
     const f = fileFor(projectId);
     if (!f) return [];
     try {
@@ -383,24 +392,29 @@ export function createGrantBook(o: GrantBookOptions) {
     const f = fileFor(projectId);
     if (!f) throw new Error("bad project id");
     fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 });
-    const tmp = `${f}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ version: 1, grants }, null, 2), { mode: 0o600 });
-    fs.renameSync(tmp, f);
+    writeFileAtomic(f, JSON.stringify({ version: 1, grants }, null, 2));
   }
 
   return {
+    /** Reads the secret and every project's file from disk into memory (the only disk read of the store). Call once at start, after the start checks. */
+    load(): void {
+      keyMem = readKey();
+      grantsMem = new Map();
+      let dirs: string[] = [];
+      try { dirs = fs.readdirSync(storeFolder(o.stateDir)); } catch { /* no store yet */ }
+      for (const d of dirs) if (PROJECT_ID_RE.test(d)) grantsMem.set(d, readDisk(d));
+    },
     /** The entries a turn for this project is built from. They are checked again by applyGrants; this only reads. */
     grantsFor(project: ProjectRef): unknown[] {
       return readAll(project.id);
     },
     /** The secret that seals this install's grants, for applyGrants; null until the first grant is saved. */
     key(): Buffer | null {
-      return readKey();
+      return keyMem;
     },
     /** Grants of one project as the app shows them: only entries that pass the check now (a dropped one is not shown as active). */
     listGrants(project: ProjectRef): SettingGrant[] {
-      const key = readKey();
-      return readAll(project.id).filter((g) => recheck(g, project, key, rp) !== null) as SettingGrant[];
+      return readAll(project.id).filter((g) => recheck(g, project, keyMem, rp) !== null) as SettingGrant[];
     },
     /** The request tool: validates, then keeps the request pending. It can neither grant nor write the store. */
     request(project: ProjectRef, req: unknown, turnId: string): RequestResult {
@@ -426,8 +440,7 @@ export function createGrantBook(o: GrantBookOptions) {
         pending.delete(project.id);
       }
       // Only entries that still pass the check count: dead ones (a lost secret, a recreated folder) must not fill the cap. Nothing is pruned here.
-      const liveKey = readKey();
-      if (readAll(project.id).filter((e) => recheck(e, project, liveKey, rp) !== null).length >= MAX_GRANTS_PER_PROJECT) return { status: "refused", reason: "This project already has the most grants it can hold.", allowed: ALLOWED_LIST };
+      if (readAll(project.id).filter((e) => recheck(e, project, keyMem, rp) !== null).length >= MAX_GRANTS_PER_PROJECT) return { status: "refused", reason: "This project already has the most grants it can hold.", allowed: ALLOWED_LIST };
       const p: PendingRequest = {
         requestId: crypto.randomBytes(12).toString("hex"), nonce: crypto.randomBytes(16).toString("hex"), hash: v.hash, reason, turnId,
         createdAt: now().toISOString(), project, normalized: v.normalized, turnEnded: false,
@@ -452,13 +465,21 @@ export function createGrantBook(o: GrantBookOptions) {
         id: crypto.randomBytes(12).toString("hex"), projectId: p.project.id, folderId: p.project.folderId, normalized: p.normalized, hash: p.hash, mac: "",
         grantedAt: now().toISOString(), grantedBy: by.slice(0, 16), bridgeVersion: o.bridgeVersion, scope: GRANT_SCOPE,
       };
+      const oldKey = keyMem;
+      const oldList = grantsMem.get(p.project.id);
       try {
-        const key = keyForSaving();
+        // Memory first, then the file; if the file cannot be written, memory goes back as it was.
+        const key = keyMem ?? crypto.randomBytes(32);
         g.mac = macOf(key, g);
-        // Writing is when dead entries (they fail the check) are dropped; a read never changes the file.
+        // Saving is when dead entries (they fail the check) are dropped.
         const rest = readAll(p.project.id).filter((e) => (e as Record<string, unknown>)?.hash !== p.hash && recheck(e, p.project, key, rp) !== null);
+        keyMem = key;
+        grantsMem.set(p.project.id, [...rest, g]);
+        if (!oldKey) writeFileAtomic(secretFile, key);
         writeAll(p.project.id, [...rest, g]);
       } catch (e) {
+        keyMem = oldKey;
+        if (oldList) grantsMem.set(p.project.id, oldList); else grantsMem.delete(p.project.id);
         log(`setting grant not saved: ${(e as Error).message}`);
         return { ok: false, status: 500, error: "The grant could not be saved on this computer." };
       }
@@ -479,13 +500,11 @@ export function createGrantBook(o: GrantBookOptions) {
     /** Removes one grant by id from whichever project holds it. The next turn is built without it. */
     revoke(grantId: unknown): boolean {
       if (typeof grantId !== "string" || !/^[0-9a-f]{24}$/.test(grantId)) return false;
-      let dirs: string[] = [];
-      try { dirs = fs.readdirSync(storeFolder(o.stateDir)); } catch { return false; }
-      for (const d of dirs) {
-        const all = readAll(d);
+      for (const [d, all] of grantsMem) {
         const keep = all.filter((e) => (e as Record<string, unknown>)?.id !== grantId);
         if (keep.length === all.length) continue;
-        try { writeAll(d, keep); } catch (e) { log(`grant not removed: ${(e as Error).message}`); return false; }
+        grantsMem.set(d, keep); // memory first, then the file; back again if the file cannot be written
+        try { writeAll(d, keep); } catch (e) { grantsMem.set(d, all); log(`grant not removed: ${(e as Error).message}`); return false; }
         return true;
       }
       return false;

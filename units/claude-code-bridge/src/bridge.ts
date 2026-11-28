@@ -3224,23 +3224,35 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
   };
   const stateIds: [string | null, string | null] = opts.stateDir ? [folderIdNow(stateRealAtStart), folderIdNow(storeFolder(stateRealAtStart))] : [null, null];
-  let stateSwapWarned = false;
-  const grantsOff = (): string => {
+  /** Once any check has failed, setting grants stay off until the bridge restarts, even if the check would pass again (a folder swapped away and back). */
+  let grantsLatched = "";
+  const latchGrantsOff = (why: string): string => {
+    if (!grantsLatched) {
+      grantsLatched = why;
+      log(`Setting grants are off: ${why}`);
+    }
+    return grantsLatched;
+  };
+  /** The checks themselves, asked afresh at every use (no remembered "ok"): a link can be re-pointed at any time. `ids` = also compare the folders' device:inode with start. */
+  const grantsOffCore = (ids: boolean): string => {
     if (!opts.stateDir) return "";
-    // Asked afresh at every use (no remembered "ok"): a link can be re-pointed at any time.
     const areas = opts.sandboxWritableAreas ?? writableAreas(home, workspace?.path ?? "", sandboxTmpDirs());
     const why = stateDirProblem(path.resolve(opts.stateDir), workspace?.path || undefined, home, platform, undefined, [...areas, ...areas.map((a) => (a ? resolveThroughLinks(a) : a))]);
     if (why) return why;
     if (resolveThroughLinks(path.resolve(opts.stateDir)) !== stateRealAtStart) return `The state folder ${opts.stateDir} now leads to a different place than when the bridge started (a link was changed), so no stored grant can be trusted. Restart the bridge.`;
     // The state folder and its projects folder must still be the very folders seen at start (device:inode, looked at without following a link, and plain
     // directories): a swap of the folder itself or of any folder above it shows here, whatever name the path still has.
-    const now: [string | null, string | null] = [folderIdNow(stateRealAtStart), folderIdNow(storeFolder(stateRealAtStart))];
-    if (stateIds[1] === null && now[1] !== null && now[0] === stateIds[0]) stateIds[1] = now[1]; // the bridge made it itself, on the first grant
-    if (now[0] === null || now[0] !== stateIds[0] || (stateIds[1] !== null && now[1] !== stateIds[1])) {
-      if (!stateSwapWarned) { stateSwapWarned = true; log(`Setting grants are off: the state folder ${opts.stateDir} (or its projects folder) is no longer the folder the bridge started with.`); }
-      return `The state folder ${opts.stateDir} (or its projects folder) is no longer the folder the bridge started with, so no stored grant can be trusted. Restart the bridge.`;
+    if (ids) {
+      const now: [string | null, string | null] = [folderIdNow(stateRealAtStart), folderIdNow(storeFolder(stateRealAtStart))];
+      if (now[0] === null || now[0] !== stateIds[0] || now[1] === null || now[1] !== stateIds[1]) return `The state folder ${opts.stateDir} (or its projects folder) is no longer the folder the bridge started with, so no stored grant can be trusted. Restart the bridge.`;
     }
     return "";
+  };
+  /** Why setting grants are off, or "". The first failure latches: grants stay off (tool not offered, routes 409, nothing applied) until the bridge restarts. */
+  const grantsOff = (): string => {
+    if (grantsLatched) return grantsLatched;
+    const why = grantsOffCore(true);
+    return why ? latchGrantsOff(why) : "";
   };
   /** Does this turn get the request tool? A top code turn inside a project, running inside the OS sandbox. */
   const settingTurn = (t: Turn): boolean => grantBook !== null && grantsOff() === "" && t.code && !t.parent && t.proj !== null && (t.computer ? sandboxedTurn(t) : !t.filesOnly && codePlatform !== "win32");
@@ -5200,7 +5212,6 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     if (route === "/v1/settings/grant") {
       const r = grantBook.grant(body.requestId, body.nonce, body.hash, callerKey(req));
-      if (r.ok) grantsOff(); // the first grant made the projects folder: its identity is taken now, before anything else can touch it
       return r.ok ? json(res, 200, { grant: r.grant }) : json(res, r.status, { error: r.error });
     }
     if (route === "/v1/settings/decline") return grantBook.decline(body.requestId) ? json(res, 200, { ok: true }) : json(res, 404, { error: "No such pending request." });
@@ -6063,8 +6074,19 @@ export function createBridge(opts: BridgeOptions = {}) {
       return accessSource;
     },
     async start() {
-      const off = grantsOff();
-      if (off) log(`Setting grants are off: ${off}`);
+      // Setting grants start here, after every start check: the projects folder is made now (so its identity is taken before any turn runs), and the
+      // secret and the stored grants are read from disk this once. They are never read from disk again until the next start.
+      if (grantBook && opts.stateDir) {
+        let off = grantsOffCore(false);
+        if (!off) {
+          try { fs.mkdirSync(storeFolder(stateRealAtStart), { recursive: true, mode: 0o700 }); } catch { /* the check below says so */ }
+          stateIds[1] = folderIdNow(storeFolder(stateRealAtStart));
+          if (stateIds[1] === null) off = `The projects folder in ${opts.stateDir} could not be made, or is not a plain folder.`;
+          else off = grantsOffCore(true);
+        }
+        if (off) latchGrantsOff(off);
+        else grantBook.load();
+      }
       fs.mkdirSync(workDir, { recursive: true, mode: 0o700 });
       await takeLock(); // one bridge per state folder: a second refuses here
       sweepSnapshots(); // the lock is ours, so no other bridge's snapshots are here

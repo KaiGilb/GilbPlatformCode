@@ -401,7 +401,7 @@ describe("the request tool", () => {
     expect(props.sort()).toEqual(["reason", "setting", "value"]);
     expect(requestSettingSchema.additionalProperties).toBe(false);
     await turn(b, REQ(req(AD, "github.com")));
-    expect(fs.existsSync(path.join(stateDir, "projects"))).toBe(false); // nothing written by the tool
+    expect(fs.readdirSync(path.join(stateDir, "projects"))).toEqual([]); // made at start, and nothing written by the tool // nothing written by the tool
     expect(rows("reqsetTools").at(-1).tools.find((t) => t.name === "request_setting").inputSchema).toEqual(JSON.parse(JSON.stringify(requestSettingSchema)));
     const [r] = (await post(b, "/v1/settings/requests", { project: "p1" })).json.requests;
     const reply = replyText(rows("reqset").at(-1));
@@ -411,7 +411,7 @@ describe("the request tool", () => {
     // fields that pretend to approve are refused, and still nothing is stored
     await turn(b, REQ({ ...req(LB, true), approve: true }, { ...req(LB, true), grant: true, nonce: r.nonce, hash: r.hash }));
     for (const x of rows("reqset").slice(-2)) expect(replyText(x)).toMatch(/Refused/);
-    expect(fs.existsSync(path.join(stateDir, "projects"))).toBe(false);
+    expect(fs.readdirSync(path.join(stateDir, "projects"))).toEqual([]); // made at start, and nothing written by the tool
   });
 
   // Spec: Unblock.Safe
@@ -436,7 +436,7 @@ describe("the request tool", () => {
     expect(got).toHaveLength(hosts.length);
     for (const x of got) expect(replyText(x), x.args.value).toMatch(/Refused/);
     expect((await post(b, "/v1/settings/requests", { project: "p1" })).json.requests).toEqual([]);
-    expect(fs.existsSync(path.join(stateDir, "projects"))).toBe(false);
+    expect(fs.readdirSync(path.join(stateDir, "projects"))).toEqual([]); // made at start, and nothing written by the tool
   });
 
   // Spec: Unblock.Safe
@@ -562,26 +562,31 @@ describe("what the next turn is built with", () => {
 
   // Spec: Unblock.HandEdits
   it("A3: a planted or hand-edited store file widens nothing", async () => {
-    const b = await start();
+    let b = await start();
+    const restart = async () => { await b.bridge.close(); b = await start(); }; // a file edited while the bridge runs is never read; the next start reads it and checks every entry
     const r = await pend(b);
     const g = (await post(b, "/v1/settings/grant", { requestId: r.requestId, nonce: r.nonce, hash: r.hash })).json.grant;
     const file = JSON.parse(fs.readFileSync(storeFile(), "utf8"));
     const edit = (grants) => fs.writeFileSync(storeFile(), JSON.stringify({ version: 1, grants }));
     edit([{ ...g, normalized: { setting: AD, value: "evil.example" } }, { ...file.grants[0], id: "f".repeat(24), normalized: { setting: AD, value: "pypi.org" } }]);
+    await restart();
     await turn(b, { prompt: "hello" });
     for (const d of ["evil.example", "pypi.org-x"]) expect(lastSettings().sandbox.network.allowedDomains).not.toContain(d);
     expect(lastSettings().sandbox.network.allowedDomains.filter((d) => d === "pypi.org")).toHaveLength(1); // the default one only
     edit([{ ...g, projectId: "p2" }, { ...g, normalized: { setting: "sandbox.enabled", value: false } }]);
+    await restart();
     await turn(b, { prompt: "hello" });
     expect(lastSettings().sandbox.enabled).toBe(true);
     expect(lastSettings().sandbox.network.allowedDomains).not.toContain("github.com");
     fs.writeFileSync(storeFile(), "{not json");
+    await restart();
     await turn(b, { prompt: "hello" });
     expect(lastSettings().sandbox.network.allowedDomains).not.toContain("github.com");
     expect(lastSettings().sandbox.enabled).toBe(true);
     // a store file planted under another project name is not read for p1
     fs.mkdirSync(path.join(stateDir, "projects", "p2"), { recursive: true });
     fs.writeFileSync(path.join(stateDir, "projects", "p2", "granted-settings.json"), JSON.stringify({ version: 1, grants: [g] }));
+    await restart();
     await turn(b, { prompt: "hello" });
     expect(lastSettings().sandbox.network.allowedDomains).not.toContain("github.com");
     await turn(b, { prompt: "hello", project: "p2" });
@@ -812,7 +817,8 @@ describe("F4 / F2 through the bridge", () => {
 describe("F3 through the bridge: the store is checked with this install's key", () => {
   // Spec: Unblock.HandEdits
   it("an entry written by hand with the old sha256 is not applied, and one copied from another install is not either", async () => {
-    const b = await start();
+    let b = await start();
+    const restart = async () => { await b.bridge.close(); b = await start(); };
     const r = await pend(b);
     const g = (await post(b, "/v1/settings/grant", { requestId: r.requestId, nonce: r.nonce, hash: r.hash })).json.grant;
     await turn(b, { prompt: "hello" });
@@ -821,10 +827,12 @@ describe("F3 through the bridge: the store is checked with this install's key", 
     const old = { ...g };
     delete old.mac; // as at 7b4bdae1: correct sha256 hash, no mac
     fs.writeFileSync(storeFile(), JSON.stringify({ version: 1, grants: [old] }));
+    await restart();
     await turn(b, { prompt: "hello" });
     expect(lastSettings().sandbox.network.allowedDomains).not.toContain("github.com");
     expect((await post(b, "/v1/settings/grants", { project: "p1" })).json.grants).toEqual([]);
-    fs.writeFileSync(storeFile(), fileText); // the genuine file works again
+    fs.writeFileSync(storeFile(), fileText); // the genuine file works again, at the next start
+    await restart();
     await turn(b, { prompt: "hello" });
     expect(lastSettings().sandbox.network.allowedDomains).toContain("github.com");
     // another install: its own state folder and key; this file is copied there
@@ -916,6 +924,7 @@ describe.each(MODULES)("N2 dead entries do not fill the cap (%s)", (_name, M) =>
     const live = JSON.parse(fs.readFileSync(file, "utf8")).grants[0];
     const dead = Array.from({ length: 50 }, (_, i) => ({ ...live, id: i.toString(16).padStart(24, "0"), mac: "0".repeat(64), hash: String(i) }));
     fs.writeFileSync(file, JSON.stringify({ version: 1, grants: [live, ...dead] }));
+    book.load(); // read at the next start
     expect(book.listGrants(p)).toHaveLength(1);
     expect(JSON.parse(fs.readFileSync(file, "utf8")).grants).toHaveLength(51); // reading did not prune
     expect(book.request(p, req(AD, "github.com"), "t1").status).toBe("pending");
@@ -1030,6 +1039,7 @@ describe.each(MODULES)("P3 / P5 the store and the secret are plain, single-name,
     const { p, book, lines, secret } = made();
     expect(book.listGrants(p)).toHaveLength(1);
     fs.linkSync(secret, path.join(tmp, "alias-of-secret"));
+    book.load(); // the next start reads the disk again
     expect(book.key()).toBeNull();
     expect(book.listGrants(p)).toEqual([]);
     expect(book.listGrants(p)).toEqual([]);
@@ -1039,6 +1049,7 @@ describe.each(MODULES)("P3 / P5 the store and the secret are plain, single-name,
   it("P3: a store file with a second name holds no grants (one warning)", () => {
     const { p, book, lines, store } = made();
     fs.linkSync(store, path.join(tmp, "alias-of-store"));
+    book.load();
     expect(book.listGrants(p)).toEqual([]);
     expect(book.grantsFor(p)).toEqual([]);
     expect(lines.filter((l) => /hard link/.test(l) && l.includes("granted-settings.json"))).toHaveLength(1);
@@ -1048,8 +1059,10 @@ describe.each(MODULES)("P3 / P5 the store and the secret are plain, single-name,
     const { p, book, lines, store } = made();
     const text = fs.readFileSync(store, "utf8");
     fs.writeFileSync(store, text + " ".repeat(1024 * 1024 - text.length)); // exactly 1 MB
+    book.load();
     expect(book.listGrants(p)).toHaveLength(1);
     fs.writeFileSync(store, text + " ".repeat(1024 * 1024 - text.length + 1));
+    book.load();
     expect(book.listGrants(p)).toEqual([]);
     expect(book.listGrants(p)).toEqual([]);
     expect(lines.filter((l) => /larger than/.test(l))).toHaveLength(1);
@@ -1178,5 +1191,105 @@ describe.each(MODULES)("Q1 more invisible characters (%s)", (_name, M) => {
     expect(shown(`a${c(0x180b)}b${c(0x180c)}${c(0x180d)}c${c(0x180e)}d${c(0x180f)}e${c(0x1d159)}f`)).toBe("abcdef");
     expect(shown(`a${c(0x1680)}b${c(0x1680)}${c(0x3000)}c`)).toBe("a b c");
     expect(shown(`k${c(0x0e33)}m`)).toBe(`k${c(0x0e33)}m`);
+  });
+});
+
+// --- fix batch 1f (hacker round 5): the grant book lives in memory after start, and a failed check latches ------------------------------------------
+describe("R1 / R2 the bridge is the only writer of the store", () => {
+  /** A sealed grant for a socket in p1, made the way the bridge makes one, with the given secret. */
+  const forgedEntry = (key, sock) => {
+    const st = fs.statSync(path.join(ws, "p1"), { bigint: true });
+    const ref = { id: "p1", folderId: `${st.dev}:${st.ino}`, root: path.join(ws, "p1") };
+    const normalized = { setting: US, value: sock };
+    const g = { id: "f".repeat(24), projectId: "p1", folderId: ref.folderId, normalized, hash: BUILT.hashOf(ref, normalized), grantedAt: "2026-11-28T00:00:00.000Z", grantedBy: "x", bridgeVersion: "x", scope: "project-until-removed" };
+    return { ...g, mac: BUILT.macOf(key, g) };
+  };
+  const forgedSock = () => path.join(ws, "p1", "forged.sock");
+  const sockets = () => JSON.stringify(lastSettings().sandbox.network.allowUnixSockets ?? []);
+
+  // Spec: Unblock.HandEdits
+  it("(a) r5: a parent renamed away, the secret read at the new name, a sealed grant forged, the parent renamed back: nothing forged is listed or applied", async () => {
+    ensureWorld();
+    const P = path.join(dir, "zone", "sd");
+    const sd = path.join(P, "state");
+    const b = await start({ opts: { stateDir: sd } });
+    const r = await pend(b);
+    expect((await post(b, "/v1/settings/grant", { requestId: r.requestId, nonce: r.nonce, hash: r.hash })).status).toBe(200);
+    fs.renameSync(P, P + ".old2"); // away
+    const secret = fs.readFileSync(path.join(P + ".old2", "state", "projects", ".grant-secret")); // the new name is not denied by path
+    fs.writeFileSync(path.join(P + ".old2", "state", "projects", "p1", "granted-settings.json"), JSON.stringify({ version: 1, grants: [forgedEntry(secret, forgedSock())] }));
+    fs.renameSync(P + ".old2", P); // and back: the same device:inode again
+    const list = await post(b, "/v1/settings/grants", { project: "p1" });
+    expect(JSON.stringify(list.json)).not.toContain("forged");
+    await turn(b, { prompt: "hello" });
+    expect(sockets()).not.toContain("forged");
+  });
+
+  // Spec: Unblock.HandEdits
+  it("(b) a sealed entry written into the store file while the bridge runs is not listed or applied; after a restart it is read like any sealed entry", async () => {
+    ensureWorld();
+    const b = await start();
+    const r = await pend(b);
+    expect((await post(b, "/v1/settings/grant", { requestId: r.requestId, nonce: r.nonce, hash: r.hash })).status).toBe(200);
+    const secret = fs.readFileSync(path.join(stateDir, "projects", ".grant-secret"));
+    const file = JSON.parse(fs.readFileSync(storeFile(), "utf8"));
+    fs.writeFileSync(storeFile(), JSON.stringify({ version: 1, grants: [...file.grants, forgedEntry(secret, forgedSock())] }));
+    const list = (await post(b, "/v1/settings/grants", { project: "p1" })).json.grants;
+    expect(list).toHaveLength(1);
+    await turn(b, { prompt: "hello" });
+    expect(sockets()).not.toContain("forged");
+    // At the next start the file is read and every entry is checked as always. This entry is validly sealed (it was made with the real secret), so it is
+    // accepted: only the sandbox's deny on the store path keeps an agent from writing and reading these files, and the README says so.
+    await b.bridge.close();
+    const again = await start();
+    expect((await post(again, "/v1/settings/grants", { project: "p1" })).json.grants).toHaveLength(2);
+  });
+
+  // Spec: Unblock.Safe
+  it("(c) a swap and a swap back: grants stay off until the bridge restarts", async () => {
+    ensureWorld();
+    const P = path.join(dir, "zone", "sd");
+    const lines = [];
+    const b = await start({ opts: { stateDir: path.join(P, "state"), log: (l) => lines.push(l) } });
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).status).toBe(200);
+    fs.renameSync(P, P + ".away");
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).status).toBe(409);
+    fs.renameSync(P + ".away", P);
+    for (const route of ["requests", "grants", "grant", "decline", "revoke"]) expect((await post(b, `/v1/settings/${route}`, { project: "p1" })).status, route).toBe(409);
+    await turn(b, { prompt: "LISTTOOLS" });
+    expect(rows("mcpTools").at(-1).names).not.toContain("request_setting");
+    expect(lines.filter((l) => /Setting grants are off/.test(l))).toHaveLength(1);
+    await b.bridge.close();
+    const again = await start({ opts: { stateDir: path.join(P, "state") } }); // a restart runs every check again
+    expect((await post(again, "/v1/settings/grants", { project: "p1" })).status).toBe(200);
+  });
+
+  // Spec: Unblock.Safe
+  it("(d) the projects folder exists, private, right after start, and its identity is taken then: a folder put in its place before the first grant turns grants off", async () => {
+    ensureWorld();
+    const b = await start();
+    const pf = path.join(stateDir, "projects");
+    expect(fs.statSync(pf).isDirectory()).toBe(true);
+    if (process.platform !== "win32") expect(fs.statSync(pf).mode & 0o777).toBe(0o700);
+    expect(fs.readdirSync(pf)).toEqual([]);
+    fs.renameSync(pf, pf + ".old");
+    fs.mkdirSync(pf);
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).status).toBe(409);
+  });
+
+  // Spec: Unblock.Safe
+  it("(e) a grant and a revoke are still written: both survive a restart", async () => {
+    ensureWorld();
+    const first = await start();
+    const r = await pend(first);
+    const g = (await post(first, "/v1/settings/grant", { requestId: r.requestId, nonce: r.nonce, hash: r.hash })).json.grant;
+    await first.bridge.close();
+    const second = await start();
+    expect((await post(second, "/v1/settings/grants", { project: "p1" })).json.grants).toHaveLength(1);
+    expect((await post(second, "/v1/settings/revoke", { grantId: g.id })).status).toBe(200);
+    await second.bridge.close();
+    const third = await start();
+    expect((await post(third, "/v1/settings/grants", { project: "p1" })).json.grants).toEqual([]);
+    expect(fs.statSync(path.join(stateDir, "projects", ".grant-secret")).mode & 0o777).toBe(0o600);
   });
 });
