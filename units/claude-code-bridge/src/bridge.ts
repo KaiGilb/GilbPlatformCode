@@ -2438,11 +2438,21 @@ export function seedAccessFile(stateDir: string, wantComputer: boolean, platform
   if (readAccessFile(path.join(stateDir, ACCESS_FILE), platform).exists) return;
   try { writeAccessFile(path.join(stateDir, ACCESS_FILE), "computer"); } catch { /* the notice says what the saved mode is */ }
 }
+/** `dev:ino` of a path (what it leads to, or the link itself when `follow` is false), or null when it does not exist or the disk gives no id. */
+function diskIdentity(p: string, follow: boolean): string | null {
+  try {
+    const st = follow ? fs.statSync(p) : fs.lstatSync(p);
+    return st.ino ? `${st.dev}:${st.ino}` : null;
+  } catch {
+    return null;
+  }
+}
 /** The state folder may not sit inside the code folder or ~/Developer: a code turn can write both. Returns the refusal text, or "". */
-export function stateDirProblem(stateDir: string, workspace: string | undefined, home: string, platform: string = process.platform): string {
+export function stateDirProblem(stateDir: string, workspace: string | undefined, home: string, platform: string = process.platform, identityOf: (p: string, follow: boolean) => string | null = diskIdentity): string {
   const ci = platform === "darwin" || platform === "win32";
   const P = platform === "win32" ? path.win32 : path;
-  const fold = (r: string) => (ci ? r.toLowerCase() : r);
+  // Case on a case-insensitive disk, and Unicode spelling (composed or decomposed: macOS keeps both names for one folder).
+  const fold = (r: string) => (ci ? r.toLowerCase() : r).normalize("NFC");
   const norm = (p: string) => fold(resolveThroughLinks(P.resolve(p)));
   /** The path as written (made absolute, `..` folded, NO link followed): a link in it can be re-pointed later by whoever may write there. */
   const lit = (p: string) => fold(P.resolve(p));
@@ -2450,8 +2460,18 @@ export function stateDirProblem(stateDir: string, workspace: string | undefined,
   // The literal path (and so every ancestor of it) AND the resolved path: either one inside a code place refuses.
   const sds = [norm(stateDir), lit(stateDir)];
   const within = (root: string) => { const rs = [norm(root), lit(root)]; return sds.some((s) => rs.some((r) => inside(s, r))); };
-  if (workspace && within(workspace)) return `The state folder ${stateDir} is inside the code folder, where a code turn can change it. Choose a --state-dir outside it.`;
-  if (within(P.join(home, "Developer"))) return `The state folder ${stateDir} is inside ~/Developer, where a code turn can change it. Choose a --state-dir outside it.`;
+  // By IDENTITY too (spelling-proof): the device:inode of the state folder and of every ancestor of it, along the path as written (each name looked at itself and
+  // as it leads on) and along the resolved path; the code folder's or ~/Developer's own id among them means the state folder is inside it.
+  const real = !(platform === "win32" || process.platform === "win32");
+  const ancestorIds = new Set<string>();
+  if (real) {
+    const chain = (p: string) => { const out: string[] = []; for (let c = P.resolve(p); ; ) { out.push(c); const up = P.dirname(c); if (up === c) break; c = up; } return out; };
+    for (const c of chain(stateDir)) for (const follow of [false, true]) { const id = identityOf(c, follow); if (id) ancestorIds.add(id); }
+    for (const c of chain(resolveThroughLinks(P.resolve(stateDir)))) { const id = identityOf(c, true); if (id) ancestorIds.add(id); }
+  }
+  const sameFolder = (root: string) => { if (!real) return false; const id = identityOf(P.resolve(root), true); return id !== null && ancestorIds.has(id); };
+  if (workspace && (within(workspace) || sameFolder(workspace))) return `The state folder ${stateDir} is inside the code folder, where a code turn can change it. Choose a --state-dir outside it.`;
+  if (within(P.join(home, "Developer")) || sameFolder(P.join(home, "Developer"))) return `The state folder ${stateDir} is inside ~/Developer, where a code turn can change it. Choose a --state-dir outside it.`;
   return "";
 }
 /** `--access-reset`, run by the person in a Terminal: clears the ON counters and the 24 h lock that three refusals in a row set. A running bridge reads the file at every request. */
@@ -3179,7 +3199,10 @@ export function createBridge(opts: BridgeOptions = {}) {
   const sandboxedTurn = (t: Turn) => t.computer && codePlatform !== "win32" && t.code && t.approval === "session";
   // --- Setting grants (0.4.1) ---
   // Needs the bridge's own state folder: the grants are kept there, where a code turn can neither read nor write (denyRead, denyWrite).
-  const grantBook = opts.stateDir ? createGrantBook({ stateDir: path.resolve(opts.stateDir), bridgeVersion: BRIDGE_BUILD, log }) : null;
+  // The state folder's real place, found ONCE here. The store and the secret are read and written through this path only (never the configured one, which
+  // may run through a link that can be re-pointed between a check and a read); grantsOff() also turns grants off if the configured path leads elsewhere.
+  const stateRealAtStart = opts.stateDir ? resolveThroughLinks(path.resolve(opts.stateDir)) : "";
+  const grantBook = opts.stateDir ? createGrantBook({ stateDir: stateRealAtStart, bridgeVersion: BRIDGE_BUILD, log }) : null;
   /** The folders that hold the grants, as the path is written and as the disk resolves it. Denied for write (and read) in both sandbox modes. */
   const grantStoreDeny: string[] = opts.stateDir ? [...new Set([storeFolder(path.resolve(opts.stateDir)), storeFolder(resolveThroughLinks(path.resolve(opts.stateDir)))])] : [];
   const projectRefOf = (t: Turn): ProjectRef | null => (t.proj ? { id: t.proj.name, folderId: t.proj.id, root: t.proj.path } : null);
@@ -3187,7 +3210,6 @@ export function createBridge(opts: BridgeOptions = {}) {
    * Why setting grants are off, or "": the state folder is inside the code folder (or ~/Developer), where a code turn can write, so the store could not be
    * kept away from it. The path is tested as written AND as the disk resolves it, and also off when it resolves somewhere else than at start.
    */
-  const stateRealAtStart = opts.stateDir ? resolveThroughLinks(path.resolve(opts.stateDir)) : "";
   const grantsOff = (): string => {
     if (!opts.stateDir) return "";
     // Asked afresh at every use (no remembered "ok"): a link can be re-pointed at any time.

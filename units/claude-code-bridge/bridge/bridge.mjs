@@ -602,6 +602,8 @@ const MAX_SEGMENTS = 32;
 const MAX_RESOLVE_STEPS = 64;
 /** At most this many request_setting calls in one turn, refused ones included; every call after it is refused without checking. */
 const MAX_CALLS_PER_TURN = 20;
+/** A store file larger than this is not read: it holds no grants (the bridge writes at most 50 per project, far below this). */
+const MAX_STORE_BYTES = 1024 * 1024;
 /** A pending request ends this long after it was made, if its turn has not ended it (or a new request) before. */
 const PENDING_MS = 15 * 60 * 1000;
 /** The disk's own spelling of a path (`.claude` stays `.claude` however it was typed on a case-insensitive disk); the plain call where there is no native one. */
@@ -717,12 +719,16 @@ function validateSetting(setting, value, project, rp = defaultRp) {
 /**
  * The reason text, as the person will read it: a short string with no control character of any kind. C0, DEL, C1 and the line and paragraph
  * separators (U+2028, U+2029) become a space; every format character (bidi controls U+202A-202E and U+2066-2069, zero-width U+200B-200D, U+FEFF
- * and the rest of \p{Cf}) is removed, and so are the blank-looking fillers outside Cf (U+034F, Hangul fillers U+115F, U+1160, U+3164, U+FFA0, braille blank U+2800), so nothing can reorder or hide the setting and value drawn next to it. Null if there is none, or it is too long.
+ * and the rest of \p{Cf}) is removed, and so are the blank-looking fillers outside Cf (U+034F, Hangul fillers U+115F, U+1160, U+3164, U+FFA0, braille blank
+ * U+2800, Khmer vowels U+17B4/5, variation selectors U+FE00-FE0F and U+E0100-E01EF), and the no-break and wide spaces (U+00A0, U+2000-200A, U+202F, U+205F, U+3000) become a plain space, so nothing can reorder or hide the setting and value drawn next to it. Null if there is none, or it is too long.
  */
 function cleanReason(r) {
     if (typeof r !== "string" || r.length > MAX_REASON)
         return null;
-    const t = r.replace(/[\p{Cf}\u034f\u115f\u1160\u2800\u3164\uffa0]+/gu, "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
+    const t = r
+        .replace(/[\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u2800\u3164\ufe00-\ufe0f\uffa0\u{e0100}-\u{e01ef}]+/gu, "")
+        .replace(/[\u0000-\u001f\u007f-\u009f\u00a0\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g, " ")
+        .trim();
     return t === "" ? null : t;
 }
 /** The size limits of a request's value, checked before anything touches the disk. Null when it is within them. */
@@ -847,12 +853,50 @@ function createGrantBook(o) {
     const secretFile = path.join(storeFolder(o.stateDir), SECRET_FILE);
     /** The install's secret, or null if there is none yet or the file is not 32 bytes (then no entry can verify). Read afresh each time. */
     function readKey() {
+        const b = readFileSafe(secretFile, 32);
+        return b && b.length === 32 ? b : null;
+    }
+    /** One warning per file and reason, not one per call (a turn reads the store many times). */
+    const warned = new Set();
+    const warnOnce = (file, why) => {
+        if (warned.has(file + why))
+            return;
+        warned.add(file + why);
+        log(`setting grants: ${file} ${why}, so it is not used.`);
+    };
+    /**
+     * The bytes of one file the bridge keeps, or null. Opened without following a link, and refused when it is not a plain file, is larger than `max`, or has
+     * more than one name (a hard link: the same bytes could be changed through the other name, as access.json already refuses). A missing file is quietly null.
+     */
+    function readFileSafe(file, max) {
+        let fd = -1;
         try {
-            const b = fs.readFileSync(secretFile);
-            return b.length === 32 ? b : null;
+            fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+            const st = fs.fstatSync(fd);
+            if (!st.isFile())
+                return null;
+            if (process.platform !== "win32" && st.nlink > 1) {
+                warnOnce(file, "has more than one name (a hard link)");
+                return null;
+            }
+            if (st.size > max) {
+                warnOnce(file, `is larger than ${max} bytes`);
+                return null;
+            }
+            const buf = Buffer.alloc(st.size);
+            const n = fs.readSync(fd, buf, 0, st.size, 0);
+            return buf.subarray(0, n);
         }
         catch {
             return null;
+        }
+        finally {
+            if (fd >= 0) {
+                try {
+                    fs.closeSync(fd);
+                }
+                catch { /* closed anyway */ }
+            }
         }
     }
     /** The secret, made once (random, 0600) when the first grant is saved. A file of the wrong size is replaced: what it sealed is gone. */
@@ -886,7 +930,10 @@ function createGrantBook(o) {
         if (!f)
             return [];
         try {
-            const j = JSON.parse(fs.readFileSync(f, "utf8"));
+            const raw = readFileSafe(f, MAX_STORE_BYTES);
+            if (!raw)
+                return [];
+            const j = JSON.parse(raw.toString("utf8"));
             return j && j.version === 1 && Array.isArray(j.grants) ? j.grants : [];
         }
         catch {
@@ -3419,11 +3466,22 @@ export function seedAccessFile(stateDir, wantComputer, platform = process.platfo
     }
     catch { /* the notice says what the saved mode is */ }
 }
+/** `dev:ino` of a path (what it leads to, or the link itself when `follow` is false), or null when it does not exist or the disk gives no id. */
+function diskIdentity(p, follow) {
+    try {
+        const st = follow ? fs.statSync(p) : fs.lstatSync(p);
+        return st.ino ? `${st.dev}:${st.ino}` : null;
+    }
+    catch {
+        return null;
+    }
+}
 /** The state folder may not sit inside the code folder or ~/Developer: a code turn can write both. Returns the refusal text, or "". */
-export function stateDirProblem(stateDir, workspace, home, platform = process.platform) {
+export function stateDirProblem(stateDir, workspace, home, platform = process.platform, identityOf = diskIdentity) {
     const ci = platform === "darwin" || platform === "win32";
     const P = platform === "win32" ? path.win32 : path;
-    const fold = (r) => (ci ? r.toLowerCase() : r);
+    // Case on a case-insensitive disk, and Unicode spelling (composed or decomposed: macOS keeps both names for one folder).
+    const fold = (r) => (ci ? r.toLowerCase() : r).normalize("NFC");
     const norm = (p) => fold(resolveThroughLinks(P.resolve(p)));
     /** The path as written (made absolute, `..` folded, NO link followed): a link in it can be re-pointed later by whoever may write there. */
     const lit = (p) => fold(P.resolve(p));
@@ -3431,9 +3489,35 @@ export function stateDirProblem(stateDir, workspace, home, platform = process.pl
     // The literal path (and so every ancestor of it) AND the resolved path: either one inside a code place refuses.
     const sds = [norm(stateDir), lit(stateDir)];
     const within = (root) => { const rs = [norm(root), lit(root)]; return sds.some((s) => rs.some((r) => inside(s, r))); };
-    if (workspace && within(workspace))
+    // By IDENTITY too (spelling-proof): the device:inode of the state folder and of every ancestor of it, along the path as written (each name looked at itself and
+    // as it leads on) and along the resolved path; the code folder's or ~/Developer's own id among them means the state folder is inside it.
+    const real = !(platform === "win32" || process.platform === "win32");
+    const ancestorIds = new Set();
+    if (real) {
+        const chain = (p) => { const out = []; for (let c = P.resolve(p);;) {
+            out.push(c);
+            const up = P.dirname(c);
+            if (up === c)
+                break;
+            c = up;
+        } return out; };
+        for (const c of chain(stateDir))
+            for (const follow of [false, true]) {
+                const id = identityOf(c, follow);
+                if (id)
+                    ancestorIds.add(id);
+            }
+        for (const c of chain(resolveThroughLinks(P.resolve(stateDir)))) {
+            const id = identityOf(c, true);
+            if (id)
+                ancestorIds.add(id);
+        }
+    }
+    const sameFolder = (root) => { if (!real)
+        return false; const id = identityOf(P.resolve(root), true); return id !== null && ancestorIds.has(id); };
+    if (workspace && (within(workspace) || sameFolder(workspace)))
         return `The state folder ${stateDir} is inside the code folder, where a code turn can change it. Choose a --state-dir outside it.`;
-    if (within(P.join(home, "Developer")))
+    if (within(P.join(home, "Developer")) || sameFolder(P.join(home, "Developer")))
         return `The state folder ${stateDir} is inside ~/Developer, where a code turn can change it. Choose a --state-dir outside it.`;
     return "";
 }
@@ -4173,7 +4257,10 @@ export function createBridge(opts = {}) {
     const sandboxedTurn = (t) => t.computer && codePlatform !== "win32" && t.code && t.approval === "session";
     // --- Setting grants (0.4.1) ---
     // Needs the bridge's own state folder: the grants are kept there, where a code turn can neither read nor write (denyRead, denyWrite).
-    const grantBook = opts.stateDir ? createGrantBook({ stateDir: path.resolve(opts.stateDir), bridgeVersion: BRIDGE_BUILD, log }) : null;
+    // The state folder's real place, found ONCE here. The store and the secret are read and written through this path only (never the configured one, which
+    // may run through a link that can be re-pointed between a check and a read); grantsOff() also turns grants off if the configured path leads elsewhere.
+    const stateRealAtStart = opts.stateDir ? resolveThroughLinks(path.resolve(opts.stateDir)) : "";
+    const grantBook = opts.stateDir ? createGrantBook({ stateDir: stateRealAtStart, bridgeVersion: BRIDGE_BUILD, log }) : null;
     /** The folders that hold the grants, as the path is written and as the disk resolves it. Denied for write (and read) in both sandbox modes. */
     const grantStoreDeny = opts.stateDir ? [...new Set([storeFolder(path.resolve(opts.stateDir)), storeFolder(resolveThroughLinks(path.resolve(opts.stateDir)))])] : [];
     const projectRefOf = (t) => (t.proj ? { id: t.proj.name, folderId: t.proj.id, root: t.proj.path } : null);
@@ -4181,7 +4268,6 @@ export function createBridge(opts = {}) {
      * Why setting grants are off, or "": the state folder is inside the code folder (or ~/Developer), where a code turn can write, so the store could not be
      * kept away from it. The path is tested as written AND as the disk resolves it, and also off when it resolves somewhere else than at start.
      */
-    const stateRealAtStart = opts.stateDir ? resolveThroughLinks(path.resolve(opts.stateDir)) : "";
     const grantsOff = () => {
         if (!opts.stateDir)
             return "";

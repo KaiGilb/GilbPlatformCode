@@ -705,11 +705,11 @@ describe.each(MODULES)("F5 the reason text (%s)", (_name, M) => {
   it("bidi controls, zero-width, C1, U+2028/9 and C0 never reach the card", () => {
     const p = world();
     const book = bookOf(M);
-    expect(shown(book, p, "pay‮no‪one‫x‬y‭z")).toBe("paynoonexyz");
-    expect(shown(book, p, "a⁦b⁧c⁨d⁩e")).toBe("abcde");
-    expect(shown(book, p, "a​b‌c‍d﻿e")).toBe("abcde");
+    expect(shown(book, p, "pay\u202eno\u202aone\u202bx\u202cy\u202dz")).toBe("paynoonexyz");
+    expect(shown(book, p, "a\u2066b\u2067c\u2068d\u2069e")).toBe("abcde");
+    expect(shown(book, p, "a\u200bb\u200cc\u200dd\ufeffe")).toBe("abcde");
     expect(shown(book, p, "a\u0085b\u0080c\u009Fd")).toBe("a b c d");
-    expect(shown(book, p, "a b c")).toBe("a b c");
+    expect(shown(book, p, "a\u2028b\u2029c")).toBe("a b c");
     expect(shown(book, p, "a\nb\rc\u0000d\u007fe")).toBe("a b c d e");
   });
   // Spec: Unblock.Safe
@@ -933,12 +933,144 @@ describe.each(MODULES)("N4 filler characters in the reason (%s)", (_name, M) => 
   it("U+3164, U+2800, U+034F, U+115F, U+1160 and U+FFA0 are removed", () => {
     const p = world();
     const book = bookOf(M);
-    for (const c of ["ㅤ", "⠀", "͏", "ᅟ", "ᅠ", "ﾠ"]) {
+    for (const c of ["\u3164", "\u2800", "\u034f", "\u115f", "\u1160", "\uffa0"]) {
       expect(book.request(p, req(LB, true, `a${c}b${c}${c}c`), "t1").status, c.codePointAt(0).toString(16)).toBe("pending");
       const [x] = book.listRequests(p.id);
       expect(x.reason, c.codePointAt(0).toString(16)).toBe("abc");
       book.decline(x.requestId);
     }
-    expect(book.request(p, req(LB, true, "ㅤ⠀"), "t1").status).toBe("refused"); // nothing left to show
+    expect(book.request(p, req(LB, true, "\u3164\u2800"), "t1").status).toBe("refused"); // nothing left to show
+  });
+});
+
+// --- fix batch 1d (hacker round 3): P1 identity, P2 re-point race, P3 hard links, P5 store size, P6 more invisible characters ---------------------------
+import { spawn } from "node:child_process";
+
+describe("P1 the state folder is compared by disk identity and Unicode spelling", () => {
+  const { stateDirProblem } = BUILT;
+  // Spec: Unblock.Safe
+  it("a decomposed (NFD) spelling of a composed (NFC) code folder is inside it (b7's input; the text fold and the identity check each catch it on APFS)", () => {
+    const d = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "setgrant-u-")));
+    try {
+      const nfc = "Caf\u00e9", nfd = "Cafe\u0301";
+      const home = path.join(d, "home");
+      fs.mkdirSync(path.join(home, nfc, "p1"), { recursive: true });
+      if (!fs.existsSync(path.join(home, nfd))) return; // this disk keeps the two spellings apart: they are two folders, nothing to prove
+      fs.mkdirSync(path.join(home, nfd, "st"), { recursive: true });
+      const ws = fs.realpathSync.native(path.join(home, nfc));
+      expect(stateDirProblem(path.join(home, nfd, "st"), ws, home, "darwin")).toMatch(/inside the code folder/);
+      expect(stateDirProblem(path.join(home, nfc, "st"), ws, home, "darwin")).toMatch(/inside the code folder/);
+      expect(stateDirProblem(path.join(d, "elsewhere", "st"), ws, home, "darwin")).toBe("");
+    } finally {
+      fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  // Spec: Unblock.Safe
+  it("identity is consulted: a state folder whose ancestor has the code folder's device:inode is refused whatever its text says (and not otherwise)", () => {
+    const ids = new Map([["/code", "7:100"], ["/home/Developer", "7:200"], ["/spelled/different", "7:100"], ["/spelled/different/st", "7:300"], ["/other/st", "7:400"], ["/other", "7:500"]]);
+    const spy = (p, follow) => ids.get(p) ?? null;
+    expect(stateDirProblem("/spelled/different/st", "/code", "/home", "linux", spy)).toMatch(/inside the code folder/);
+    expect(stateDirProblem("/other/st", "/code", "/home", "linux", spy)).toBe("");
+    ids.set("/other", "7:200");
+    expect(stateDirProblem("/other/st", "/code", "/home", "linux", spy)).toMatch(/inside ~\/Developer/);
+  });
+});
+
+describe("P2 the store is read through the real path found at start", () => {
+  // Spec: Unblock.HandEdits
+  it("a link in the state path, inside the code folder, flipped in a tight loop (6000 polls): no forged grant is ever listed", async () => {
+    ensureWorld();
+    const Z = path.join(dir, "outZ");
+    fs.mkdirSync(path.join(Z, "state"), { recursive: true });
+    const M = path.join(ws, "p1", "M");
+    fs.symlinkSync(Z, M);
+    const L = path.join(dir, "L");
+    fs.symlinkSync(M, L);
+    const evil = path.join(ws, "p1", "evil");
+    fs.mkdirSync(path.join(evil, "state"), { recursive: true });
+    // a genuine, sealed grant (its own secret) for a socket in p1, made through a book on the evil folder
+    const st = fs.statSync(path.join(ws, "p1"), { bigint: true });
+    const ref = { id: "p1", folderId: `${st.dev}:${st.ino}`, root: path.join(ws, "p1") };
+    const forged = BUILT.createGrantBook({ stateDir: path.join(evil, "state"), bridgeVersion: "x" });
+    expect(forged.request(ref, req(US, "forged.sock"), "t").status).toBe("pending");
+    const fr = forged.listRequests("p1")[0];
+    expect(forged.grant(fr.requestId, fr.nonce, fr.hash, "x").ok).toBe(true);
+    const b = await start({ opts: { stateDir: path.join(L, "state") } });
+    const flip = `const [M,a,b,ms]=process.argv.slice(1);const fs=require("fs");const end=Date.now()+ +ms;let i=0;while(Date.now()<end){const t=M+".t";try{fs.symlinkSync(i++%2?a:b,t);fs.renameSync(t,M);}catch{}}`;
+    const child = spawn(process.execPath, ["-e", flip, M, Z, evil, "20000"], { stdio: "ignore" });
+    let hits = 0, ok200 = 0;
+    try {
+      for (let i = 0; i < 6000; i++) {
+        const r = await post(b, "/v1/settings/grants", { project: "p1" });
+        if (r.status === 200) ok200++;
+        if (r.json?.grants?.length) hits++;
+      }
+    } finally {
+      child.kill("SIGKILL");
+    }
+    expect(ok200).toBeGreaterThan(0); // the polls did run with grants on
+    expect(hits).toBe(0);
+  }, 120000);
+});
+
+describe.each(MODULES)("P3 / P5 the store and the secret are plain, single-name, bounded files (%s)", (_name, M) => {
+  const made = (over = {}) => {
+    const p = world();
+    const lines = [];
+    const book = bookOf(M, { log: (l) => lines.push(l), ...over });
+    book.request(p, req(AD, "github.com"), "t1");
+    const r = book.listRequests(p.id)[0];
+    expect(book.grant(r.requestId, r.nonce, r.hash, "abc").ok).toBe(true);
+    const projects = path.join(tmp, "state", "projects");
+    return { p, book, lines, secret: path.join(projects, ".grant-secret"), store: path.join(projects, p.id, "granted-settings.json") };
+  };
+  // Spec: Unblock.Safe
+  it("P3: a secret with a second name is not used (no key, no grants, one warning)", () => {
+    const { p, book, lines, secret } = made();
+    expect(book.listGrants(p)).toHaveLength(1);
+    fs.linkSync(secret, path.join(tmp, "alias-of-secret"));
+    expect(book.key()).toBeNull();
+    expect(book.listGrants(p)).toEqual([]);
+    expect(book.listGrants(p)).toEqual([]);
+    expect(lines.filter((l) => /hard link/.test(l) && l.includes(".grant-secret"))).toHaveLength(1);
+  });
+  // Spec: Unblock.Safe
+  it("P3: a store file with a second name holds no grants (one warning)", () => {
+    const { p, book, lines, store } = made();
+    fs.linkSync(store, path.join(tmp, "alias-of-store"));
+    expect(book.listGrants(p)).toEqual([]);
+    expect(book.grantsFor(p)).toEqual([]);
+    expect(lines.filter((l) => /hard link/.test(l) && l.includes("granted-settings.json"))).toHaveLength(1);
+  });
+  // Spec: Unblock.Safe
+  it("P5: a store file over 1 MB is not parsed (no grants, one warning); under it, it is read", () => {
+    const { p, book, lines, store } = made();
+    const text = fs.readFileSync(store, "utf8");
+    fs.writeFileSync(store, text + " ".repeat(1024 * 1024 - text.length)); // exactly 1 MB
+    expect(book.listGrants(p)).toHaveLength(1);
+    fs.writeFileSync(store, text + " ".repeat(1024 * 1024 - text.length + 1));
+    expect(book.listGrants(p)).toEqual([]);
+    expect(book.listGrants(p)).toEqual([]);
+    expect(lines.filter((l) => /larger than/.test(l))).toHaveLength(1);
+  });
+});
+
+describe.each(MODULES)("P6 more invisible characters and wide spaces in the reason (%s)", (_name, M) => {
+  const shown = (book, p, reason) => {
+    book.request(p, req(LB, true, reason), "t1");
+    const first = book.listRequests(p.id)[0];
+    const out = first ? first.reason : null;
+    if (first) book.decline(first.requestId);
+    return out;
+  };
+  // Spec: Unblock.Safe
+  it("U+17B4/5 and variation selectors are removed; NBSP-style spaces become one plain space", () => {
+    const p = world();
+    const book = bookOf(M);
+    expect(shown(book, p, "a\u17b4b\u17b5c")).toBe("abc");
+    expect(shown(book, p, "a\ufe00b\ufe0fc\u{e0100}d\u{e01ef}e")).toBe("abcde");
+    expect(shown(book, p, "a\u00a0b\u2000\u200ac\u202fd\u205fe\u3000f")).toBe("a b c d e f");
+    expect(shown(book, p, "a\u00a0\u00a0\u3000b")).toBe("a b");
   });
 });

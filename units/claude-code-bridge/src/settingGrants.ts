@@ -56,6 +56,8 @@ const MAX_SEGMENTS = 32;
 const MAX_RESOLVE_STEPS = 64;
 /** At most this many request_setting calls in one turn, refused ones included; every call after it is refused without checking. */
 const MAX_CALLS_PER_TURN = 20;
+/** A store file larger than this is not read: it holds no grants (the bridge writes at most 50 per project, far below this). */
+const MAX_STORE_BYTES = 1024 * 1024;
 /** A pending request ends this long after it was made, if its turn has not ended it (or a new request) before. */
 const PENDING_MS = 15 * 60 * 1000;
 
@@ -169,11 +171,15 @@ export function validateSetting(setting: unknown, value: unknown, project: Proje
 /**
  * The reason text, as the person will read it: a short string with no control character of any kind. C0, DEL, C1 and the line and paragraph
  * separators (U+2028, U+2029) become a space; every format character (bidi controls U+202A-202E and U+2066-2069, zero-width U+200B-200D, U+FEFF
- * and the rest of \p{Cf}) is removed, and so are the blank-looking fillers outside Cf (U+034F, Hangul fillers U+115F, U+1160, U+3164, U+FFA0, braille blank U+2800), so nothing can reorder or hide the setting and value drawn next to it. Null if there is none, or it is too long.
+ * and the rest of \p{Cf}) is removed, and so are the blank-looking fillers outside Cf (U+034F, Hangul fillers U+115F, U+1160, U+3164, U+FFA0, braille blank
+ * U+2800, Khmer vowels U+17B4/5, variation selectors U+FE00-FE0F and U+E0100-E01EF), and the no-break and wide spaces (U+00A0, U+2000-200A, U+202F, U+205F, U+3000) become a plain space, so nothing can reorder or hide the setting and value drawn next to it. Null if there is none, or it is too long.
  */
 function cleanReason(r: unknown): string | null {
   if (typeof r !== "string" || r.length > MAX_REASON) return null;
-  const t = r.replace(/[\p{Cf}\u034f\u115f\u1160\u2800\u3164\uffa0]+/gu, "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
+  const t = r
+    .replace(/[\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u2800\u3164\ufe00-\ufe0f\uffa0\u{e0100}-\u{e01ef}]+/gu, "")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u00a0\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g, " ")
+    .trim();
   return t === "" ? null : t;
 }
 
@@ -306,11 +312,35 @@ export function createGrantBook(o: GrantBookOptions) {
 
   /** The install's secret, or null if there is none yet or the file is not 32 bytes (then no entry can verify). Read afresh each time. */
   function readKey(): Buffer | null {
+    const b = readFileSafe(secretFile, 32);
+    return b && b.length === 32 ? b : null;
+  }
+  /** One warning per file and reason, not one per call (a turn reads the store many times). */
+  const warned = new Set<string>();
+  const warnOnce = (file: string, why: string) => {
+    if (warned.has(file + why)) return;
+    warned.add(file + why);
+    log(`setting grants: ${file} ${why}, so it is not used.`);
+  };
+  /**
+   * The bytes of one file the bridge keeps, or null. Opened without following a link, and refused when it is not a plain file, is larger than `max`, or has
+   * more than one name (a hard link: the same bytes could be changed through the other name, as access.json already refuses). A missing file is quietly null.
+   */
+  function readFileSafe(file: string, max: number): Buffer | null {
+    let fd = -1;
     try {
-      const b = fs.readFileSync(secretFile);
-      return b.length === 32 ? b : null;
+      fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+      const st = fs.fstatSync(fd);
+      if (!st.isFile()) return null;
+      if (process.platform !== "win32" && st.nlink > 1) { warnOnce(file, "has more than one name (a hard link)"); return null; }
+      if (st.size > max) { warnOnce(file, `is larger than ${max} bytes`); return null; }
+      const buf = Buffer.alloc(st.size);
+      const n = fs.readSync(fd, buf, 0, st.size, 0);
+      return buf.subarray(0, n);
     } catch {
       return null;
+    } finally {
+      if (fd >= 0) { try { fs.closeSync(fd); } catch { /* closed anyway */ } }
     }
   }
   /** The secret, made once (random, 0600) when the first grant is saved. A file of the wrong size is replaced: what it sealed is gone. */
@@ -340,7 +370,9 @@ export function createGrantBook(o: GrantBookOptions) {
     const f = fileFor(projectId);
     if (!f) return [];
     try {
-      const j = JSON.parse(fs.readFileSync(f, "utf8"));
+      const raw = readFileSafe(f, MAX_STORE_BYTES);
+      if (!raw) return [];
+      const j = JSON.parse(raw.toString("utf8"));
       return j && j.version === 1 && Array.isArray(j.grants) ? j.grants : [];
     } catch {
       return [];
