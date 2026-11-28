@@ -245,6 +245,13 @@ process.stdin.on("end", async () => {
     setInterval(() => {}, 1000);
     return;
   }
+  // FAKESTREAM:<json array of stream events> (one line of the prompt): emits those events, in order, after init, INSTEAD of the one assistant text line
+  // below (the result still follows). FAKERESULT:<json string>: the result's text (default: the usual echo). 0.4.0, for the time_left tests.
+  const streamLine = /FAKESTREAM:(.*)/.exec(prompt);
+  const streamOnly = streamLine !== null;
+  if (streamLine) for (const e of JSON.parse(streamLine[1])) out(e);
+  const resultLine = /FAKERESULT:(.*)/.exec(prompt);
+  if (resultLine) text = JSON.parse(resultLine[1]);
   if (prompt.includes("CODEWRITE")) {
     await new Promise((r) => setTimeout(r, 200)); // after init: a bridge that refused the init has killed this process by now
     // FAKE_WRITE_PATH: name this path in the tool call instead (and write nothing), e.g. a file reached through a link.
@@ -279,7 +286,7 @@ process.stdin.on("end", async () => {
       ? { input_tokens: "10", output_tokens: 5, cache_read_input_tokens: -1, cache_creation_input_tokens: 600 }
       : stepUsageOf(5);
     out({ type: "assistant", message: { model: "fake-model", content: [{ type: "text", text }], usage: last } });
-  } else out({ type: "assistant", message: { content: [{ type: "text", text }] } });
+  } else if (!streamOnly) out({ type: "assistant", message: { content: [{ type: "text", text }] } });
   if (prompt.includes("SUBAGENTSTEP")) {
     out({ type: "assistant", parent_tool_use_id: "ms0", message: { model: "fake-model", content: [{ type: "text", text: "sub" }], usage: { input_tokens: 777777, cache_read_input_tokens: 888888, cache_creation_input_tokens: 999999 } } });
   }
