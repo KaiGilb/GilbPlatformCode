@@ -1457,3 +1457,188 @@ describe.each(MODULES)("S4 a project folder that is a link is not followed at lo
     expect(book.listGrants(p)).toHaveLength(1); // a real folder loads as before
   });
 });
+
+// --- batch 2, item 0 (hacker round 7, INFO): T1 a folder swapped for a link after start, T2 temp files left by a kill -------------------------------
+describe.each(MODULES)("I0-T1 the store folders are checked before every write (%s)", (_name, M) => {
+  const grantOne = (book, p, value) => {
+    book.request(p, req(AD, value), `t-${value}`);
+    const r = book.listRequests(p.id)[0];
+    return book.grant(r.requestId, r.nonce, r.hash, "abc");
+  };
+  const projects = () => path.join(tmp, "state", "projects");
+  // Spec: Unblock.Safe
+  it("a project folder swapped for a folder link after start: the grant is refused (500, latch), nothing is written through the link, memory is as it was", () => {
+    const p = world();
+    const book = bookOf(M);
+    book.load();
+    expect(grantOne(book, p, "github.com").ok).toBe(true);
+    const away = path.join(tmp, "away");
+    fs.renameSync(path.join(projects(), p.id), away);
+    const bait = path.join(tmp, "bait");
+    fs.mkdirSync(bait);
+    fs.symlinkSync(bait, path.join(projects(), p.id));
+    const r = grantOne(book, p, "pypi.org");
+    expect(r).toMatchObject({ ok: false, status: 500, latch: true });
+    expect(fs.readdirSync(bait)).toEqual([]);
+    expect(fs.readdirSync(away).filter((n) => n.endsWith(".tmp"))).toEqual([]);
+    expect(book.listGrants(p)).toHaveLength(1);
+  });
+  // Spec: Unblock.Safe
+  it("revoke through a swapped project folder is refused with latch, and the link target stays empty", () => {
+    const p = world();
+    const book = bookOf(M);
+    book.load();
+    const g = grantOne(book, p, "github.com").grant;
+    fs.renameSync(path.join(projects(), p.id), path.join(tmp, "away"));
+    const bait = path.join(tmp, "bait");
+    fs.mkdirSync(bait);
+    fs.symlinkSync(bait, path.join(projects(), p.id));
+    expect(book.revoke(g.id)).toMatchObject({ ok: false, status: 500, latch: true });
+    expect(fs.readdirSync(bait)).toEqual([]);
+    expect(book.listGrants(p)).toHaveLength(1);
+  });
+  // Spec: Unblock.Safe
+  it("a project folder replaced by another real folder (other inode) is refused too", () => {
+    const p = world();
+    const book = bookOf(M);
+    book.load();
+    expect(grantOne(book, p, "github.com").ok).toBe(true);
+    fs.renameSync(path.join(projects(), p.id), path.join(tmp, "away"));
+    fs.mkdirSync(path.join(projects(), p.id));
+    expect(grantOne(book, p, "pypi.org")).toMatchObject({ ok: false, status: 500, latch: true });
+    expect(fs.readdirSync(path.join(projects(), p.id))).toEqual([]);
+  });
+  // Spec: Unblock.Safe
+  it("a folder this book made itself (first grant) is recorded: a swap after that first grant is refused", () => {
+    const p = world();
+    const book = bookOf(M); // no load: the store did not exist, the first grant creates it
+    expect(grantOne(book, p, "github.com").ok).toBe(true);
+    fs.renameSync(path.join(projects(), p.id), path.join(tmp, "away"));
+    const bait = path.join(tmp, "bait");
+    fs.mkdirSync(bait);
+    fs.symlinkSync(bait, path.join(projects(), p.id));
+    expect(grantOne(book, p, "pypi.org")).toMatchObject({ ok: false, status: 500, latch: true });
+    expect(fs.readdirSync(bait)).toEqual([]);
+  });
+  // Spec: Unblock.Safe
+  it("the store folder itself swapped for a link: the secret is not written through it", () => {
+    const p = world();
+    const book = bookOf(M);
+    book.load();
+    const bait = path.join(tmp, "bait");
+    fs.mkdirSync(bait);
+    fs.mkdirSync(projects(), { recursive: true });
+    // Load saw no folder; now one appears as a link before the first write.
+    fs.rmSync(projects(), { recursive: true });
+    fs.symlinkSync(bait, projects());
+    expect(grantOne(book, p, "github.com")).toMatchObject({ ok: false, status: 500 });
+    expect(fs.readdirSync(bait)).toEqual([]);
+  });
+  // Spec: Unblock.Safe
+  it("the store folder swapped for a link to the real store folder: the project folder is not reached through it (a later write is refused with latch)", () => {
+    const p = world();
+    const book = bookOf(M);
+    book.load();
+    expect(grantOne(book, p, "github.com").ok).toBe(true);
+    const away = path.join(tmp, "away-projects");
+    fs.renameSync(projects(), away);
+    fs.symlinkSync(away, projects());
+    const before = fs.readFileSync(path.join(away, p.id, "granted-settings.json"), "utf8");
+    expect(grantOne(book, p, "pypi.org")).toMatchObject({ ok: false, status: 500, latch: true });
+    expect(fs.readFileSync(path.join(away, p.id, "granted-settings.json"), "utf8")).toBe(before);
+  });
+  // Spec: Unblock.Safe
+  it("a plain folder that was never swapped keeps working across many writes", () => {
+    const p = world();
+    const book = bookOf(M);
+    book.load();
+    for (const v of ["github.com", "pypi.org", "crates.io"]) expect(grantOne(book, p, v).ok).toBe(true);
+    expect(book.listGrants(p)).toHaveLength(3);
+  });
+});
+
+describe.each(MODULES)("I0-T2 temp files left by a kill are removed at load (%s)", (_name, M) => {
+  const hex = "0123456789abcdef0123456789abcdef";
+  // Spec: Unblock.Safe
+  it("leftover .grant-secret.<hex>.tmp and granted-settings.json.<hex>.tmp (regular files) are removed; other names and links are left alone", () => {
+    const p = world();
+    const book = bookOf(M);
+    const projects = path.join(tmp, "state", "projects");
+    fs.mkdirSync(path.join(projects, "p1"), { recursive: true });
+    const secretTmp = path.join(projects, `.grant-secret.${hex}.tmp`);
+    const storeTmp = path.join(projects, "p1", `granted-settings.json.${hex}.tmp`);
+    fs.writeFileSync(secretTmp, Buffer.alloc(32, 7));
+    fs.writeFileSync(storeTmp, "{}");
+    const other = [path.join(projects, ".grant-secret.tmp"), path.join(projects, `.grant-secret.${hex.slice(1)}.tmp`), path.join(projects, "p1", "notes.tmp"), path.join(projects, "p1", `granted-settings.json.${hex}.tmp.keep`), path.join(projects, "p1", `other.json.${hex}.tmp`)];
+    for (const f of other) fs.writeFileSync(f, "x");
+    const target = path.join(tmp, "leak.txt");
+    fs.writeFileSync(target, "untouched");
+    const linkTmp = path.join(projects, "p1", `granted-settings.json.${"f".repeat(32)}.tmp`);
+    fs.symlinkSync(target, linkTmp);
+    book.load();
+    expect(fs.existsSync(secretTmp)).toBe(false);
+    expect(fs.existsSync(storeTmp)).toBe(false);
+    for (const f of other) expect(fs.existsSync(f), f).toBe(true);
+    expect(fs.lstatSync(linkTmp).isSymbolicLink()).toBe(true); // a link is never followed or touched
+    expect(fs.readFileSync(target, "utf8")).toBe("untouched");
+  });
+  // Spec: Unblock.Safe
+  it("a project folder that is a link is not entered by the sweep: its temp-named files stay", () => {
+    const p = world();
+    const book = bookOf(M);
+    const projects = path.join(tmp, "state", "projects");
+    fs.mkdirSync(projects, { recursive: true });
+    const away = path.join(tmp, "away");
+    fs.mkdirSync(away);
+    const inside = path.join(away, `granted-settings.json.${hex}.tmp`);
+    fs.writeFileSync(inside, "x");
+    fs.symlinkSync(away, path.join(projects, "p1"));
+    book.load();
+    expect(fs.existsSync(inside)).toBe(true);
+  });
+  // Spec: Unblock.Safe
+  it("a temp-named FOLDER is not removed", () => {
+    const p = world();
+    const book = bookOf(M);
+    const projects = path.join(tmp, "state", "projects");
+    const d = path.join(projects, `.grant-secret.${hex}.tmp`);
+    fs.mkdirSync(d, { recursive: true });
+    book.load();
+    expect(fs.statSync(d).isDirectory()).toBe(true);
+  });
+});
+
+describe("I0 through the bridge", () => {
+  // Spec: Unblock.Safe
+  it("a project folder swapped for a link after start: the grant answers 500, and setting grants are latched off (409) until a restart", async () => {
+    ensureWorld();
+    const b = await start();
+    const r1 = await pend(b);
+    expect((await post(b, "/v1/settings/grant", { requestId: r1.requestId, nonce: r1.nonce, hash: r1.hash })).status).toBe(200);
+    const r2 = await pend(b, req(AD, "pypi.org"));
+    const projects = path.join(stateDir, "projects");
+    const bait = path.join(dir, "bait");
+    fs.mkdirSync(bait);
+    fs.renameSync(path.join(projects, "p1"), path.join(dir, "away-p1"));
+    fs.symlinkSync(bait, path.join(projects, "p1"));
+    const bad = await post(b, "/v1/settings/grant", { requestId: r2.requestId, nonce: r2.nonce, hash: r2.hash });
+    expect(bad.status).toBe(500);
+    expect(fs.readdirSync(bait)).toEqual([]);
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).status).toBe(409); // latched
+  });
+  // Spec: Unblock.Safe
+  it("a revoke through a swapped project folder answers 500 and latches grants off (409) too", async () => {
+    ensureWorld();
+    const b = await start();
+    const r1 = await pend(b);
+    const g = (await post(b, "/v1/settings/grant", { requestId: r1.requestId, nonce: r1.nonce, hash: r1.hash })).json.grant;
+    const projects = path.join(stateDir, "projects");
+    const bait = path.join(dir, "bait");
+    fs.mkdirSync(bait);
+    fs.renameSync(path.join(projects, "p1"), path.join(dir, "away-p1"));
+    fs.symlinkSync(bait, path.join(projects, "p1"));
+    expect((await post(b, "/v1/settings/revoke", { grantId: g.id })).status).toBe(500);
+    expect(fs.readdirSync(bait)).toEqual([]);
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).status).toBe(409);
+  });
+});
