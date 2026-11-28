@@ -5212,10 +5212,14 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     if (route === "/v1/settings/grant") {
       const r = grantBook.grant(body.requestId, body.nonce, body.hash, callerKey(req));
+      if (!r.ok && r.latch) latchGrantsOff(r.error);
       return r.ok ? json(res, 200, { grant: r.grant }) : json(res, r.status, { error: r.error });
     }
     if (route === "/v1/settings/decline") return grantBook.decline(body.requestId) ? json(res, 200, { ok: true }) : json(res, 404, { error: "No such pending request." });
-    if (route === "/v1/settings/revoke") return grantBook.revoke(body.grantId) ? json(res, 200, { ok: true }) : json(res, 404, { error: "No such grant." });
+    if (route === "/v1/settings/revoke") {
+      const r = grantBook.revoke(body.grantId);
+      return r.ok ? json(res, 200, { ok: true }) : json(res, r.status, { error: r.error });
+    }
     return json(res, 404, { error: "No such route." });
   }
 

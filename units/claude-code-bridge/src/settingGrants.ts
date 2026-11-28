@@ -279,7 +279,9 @@ export interface PendingRequest {
 export type RequestResult =
   | { status: "pending"; requestId: string; merged: boolean }
   | { status: "refused"; reason: string; allowed: readonly string[] };
-export type GrantResult = { ok: true; grant: SettingGrant } | { ok: false; status: number; error: string };
+/** `latch`: the caller must keep setting grants off until the bridge restarts (the secret file was found changed). */
+export type GrantResult = { ok: true; grant: SettingGrant } | { ok: false; status: number; error: string; latch?: true };
+export type RevokeResult = { ok: true } | { ok: false; status: number; error: string };
 
 export interface GrantBookOptions {
   /** The bridge's state folder. The store is `<stateDir>/projects/<projectId>/granted-settings.json`. */
@@ -288,6 +290,8 @@ export interface GrantBookOptions {
   now?: () => Date;
   realpath?: Realpath;
   log?: (s: string) => void;
+  /** TEST-ONLY: the temp file name of an atomic write (default: the file name plus 16 random bytes in hex). */
+  tempName?: (file: string) => string;
 }
 
 /** The folder that holds every project's grants. A code turn may neither read nor write it (denyWrite and denyRead). */
@@ -352,12 +356,55 @@ export function createGrantBook(o: GrantBookOptions) {
       if (fd >= 0) { try { fs.closeSync(fd); } catch { /* closed anyway */ } }
     }
   }
-  /** Writes a whole file the safe way: a temp file in the same folder (mode 0600), then a rename over the name. */
+  const tempName = o.tempName ?? ((f: string) => `${f}.${crypto.randomBytes(16).toString("hex")}.tmp`);
+  /** Refuses a destination that exists and is not a plain file (a link, a folder, a device): a rename would replace it, and a link may be where the agent wants the bytes to go. */
+  function destinationOk(f: string): void {
+    let st: fs.Stats;
+    try { st = fs.lstatSync(f); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return; throw e; }
+    if (!st.isFile()) throw new Error(`${f} is not a plain file`);
+  }
+  /**
+   * Writes a whole file the safe way: a temp file in the same folder with a random name, created new (O_EXCL, so an existing file or link at that name
+   * fails, never followed or reused; O_NOFOLLOW too) with mode 0600, written, fsynced and closed, then renamed over the name. A destination that is a
+   * link or not a plain file is refused before and again just before the rename. A temp file this call made is removed if anything fails.
+   */
   function writeFileAtomic(f: string, data: string | Buffer): void {
     fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 });
-    const tmp = `${f}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, data, { mode: 0o600 });
-    fs.renameSync(tmp, f);
+    destinationOk(f);
+    const tmp = tempName(f);
+    const fd = fs.openSync(tmp, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
+    try {
+      fs.writeFileSync(fd, data);
+      fs.fsyncSync(fd);
+    } catch (e) {
+      try { fs.closeSync(fd); } catch { /* closed anyway */ }
+      try { fs.rmSync(tmp, { force: true }); } catch { /* gone */ }
+      throw e;
+    }
+    fs.closeSync(fd);
+    try {
+      destinationOk(f);
+      fs.renameSync(tmp, f);
+    } catch (e) {
+      try { fs.rmSync(tmp, { force: true }); } catch { /* gone */ }
+      throw e;
+    }
+  }
+  /** The secret file against memory: "same", "missing", or "bad" (a link, not a plain single-name file, other bytes, unreadable). */
+  function secretState(key: Buffer): "same" | "missing" | "bad" {
+    let fd = -1;
+    try {
+      fd = fs.openSync(secretFile, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+      const st = fs.fstatSync(fd);
+      if (!st.isFile() || (process.platform !== "win32" && st.nlink > 1) || st.size !== key.length) return "bad";
+      const buf = Buffer.alloc(st.size);
+      fs.readSync(fd, buf, 0, st.size, 0);
+      return crypto.timingSafeEqual(buf, key) ? "same" : "bad";
+    } catch (e) {
+      return (e as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "bad";
+    } finally {
+      if (fd >= 0) { try { fs.closeSync(fd); } catch { /* closed anyway */ } }
+    }
   }
   /** Drops a request that has waited too long. */
   function sweep(): void {
@@ -402,7 +449,15 @@ export function createGrantBook(o: GrantBookOptions) {
       grantsMem = new Map();
       let dirs: string[] = [];
       try { dirs = fs.readdirSync(storeFolder(o.stateDir)); } catch { /* no store yet */ }
-      for (const d of dirs) if (PROJECT_ID_RE.test(d)) grantsMem.set(d, readDisk(d));
+      for (const d of dirs) {
+        if (!PROJECT_ID_RE.test(d)) continue;
+        // A project's folder is opened without following a link: it must itself be a plain directory, else that project is skipped.
+        const dp = path.join(storeFolder(o.stateDir), d);
+        let plain = false;
+        try { plain = fs.lstatSync(dp).isDirectory(); } catch { /* gone */ }
+        if (!plain) { warnOnce(dp, "is not a plain folder"); continue; }
+        grantsMem.set(d, readDisk(d));
+      }
     },
     /** The entries a turn for this project is built from. They are checked again by applyGrants; this only reads. */
     grantsFor(project: ProjectRef): unknown[] {
@@ -467,6 +522,21 @@ export function createGrantBook(o: GrantBookOptions) {
       };
       const oldKey = keyMem;
       const oldList = grantsMem.get(p.project.id);
+      // The secret file must still be the one the bridge made: gone, it is written again from memory (else grants made now would be lost at the next
+      // start); changed, linked or not a plain single-name file, nothing is granted and the caller keeps grants off until the bridge restarts.
+      if (keyMem) {
+        const st = secretState(keyMem);
+        if (st === "bad") {
+          log("setting grants: the secret file was changed while the bridge runs.");
+          return { ok: false, status: 409, error: "The secret file of the grants was changed while the bridge runs, so nothing can be granted. Setting grants are off until the bridge restarts.", latch: true };
+        }
+        if (st === "missing") {
+          try { writeFileAtomic(secretFile, keyMem); } catch (e) {
+            log(`setting grant not saved: ${(e as Error).message}`);
+            return { ok: false, status: 500, error: "The grant could not be saved on this computer." };
+          }
+        }
+      }
       try {
         // Memory first, then the file; if the file cannot be written, memory goes back as it was.
         const key = keyMem ?? crypto.randomBytes(32);
@@ -498,16 +568,21 @@ export function createGrantBook(o: GrantBookOptions) {
       for (const p of pending.values()) if (p.turnId === turnId) p.turnEnded = true;
     },
     /** Removes one grant by id from whichever project holds it. The next turn is built without it. */
-    revoke(grantId: unknown): boolean {
-      if (typeof grantId !== "string" || !/^[0-9a-f]{24}$/.test(grantId)) return false;
+    revoke(grantId: unknown): RevokeResult {
+      const none: RevokeResult = { ok: false, status: 404, error: "No such grant." };
+      if (typeof grantId !== "string" || !/^[0-9a-f]{24}$/.test(grantId)) return none;
       for (const [d, all] of grantsMem) {
         const keep = all.filter((e) => (e as Record<string, unknown>)?.id !== grantId);
         if (keep.length === all.length) continue;
         grantsMem.set(d, keep); // memory first, then the file; back again if the file cannot be written
-        try { writeAll(d, keep); } catch (e) { grantsMem.set(d, all); log(`grant not removed: ${(e as Error).message}`); return false; }
-        return true;
+        try { writeAll(d, keep); } catch (e) {
+          grantsMem.set(d, all);
+          log(`grant not removed: ${(e as Error).message}`);
+          return { ok: false, status: 500, error: "Could not save the change; nothing was changed." };
+        }
+        return { ok: true };
       }
-      return false;
+      return none;
     },
   };
 }

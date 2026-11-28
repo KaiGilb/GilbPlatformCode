@@ -1293,3 +1293,167 @@ describe("R1 / R2 the bridge is the only writer of the store", () => {
     expect(fs.statSync(path.join(stateDir, "projects", ".grant-secret")).mode & 0o777).toBe(0o600);
   });
 });
+
+// --- fix batch 1g (hacker round 6): S1 temp file, S2 secret file, S4 project folder links, revoke failure -----------------------------------------
+describe.each(MODULES)("S1 the atomic write cannot be steered (%s)", (_name, M) => {
+  const grantOne = (book, p, value = "github.com") => {
+    book.request(p, req(AD, value), `t-${value}`);
+    const r = book.listRequests(p.id)[0];
+    return book.grant(r.requestId, r.nonce, r.hash, "abc");
+  };
+  // Spec: Unblock.Safe
+  it("a link at the old predictable temp name (file.<pid>.tmp) has no effect: the attacker's target is untouched and the grant is saved", () => {
+    const p = world();
+    const book = bookOf(M);
+    const target = path.join(tmp, "leak.txt");
+    fs.writeFileSync(target, "untouched");
+    const projects = path.join(tmp, "state", "projects");
+    fs.mkdirSync(path.join(projects, "p1"), { recursive: true });
+    fs.symlinkSync(target, path.join(projects, `.grant-secret.${process.pid}.tmp`));
+    fs.symlinkSync(target, path.join(projects, "p1", `granted-settings.json.${process.pid}.tmp`));
+    expect(grantOne(book, p).ok).toBe(true);
+    expect(fs.readFileSync(target, "utf8")).toBe("untouched");
+    expect(fs.readFileSync(path.join(projects, ".grant-secret")).length).toBe(32);
+  });
+  // Spec: Unblock.Safe
+  it("a collision at the temp name (a link, or a file the attacker made 0666) fails safely: nothing written there, memory rolled back, no grant", () => {
+    const p = world();
+    const projects = path.join(tmp, "state", "projects");
+    fs.mkdirSync(projects, { recursive: true });
+    const target = path.join(tmp, "leak.txt");
+    fs.writeFileSync(target, "untouched");
+    const fixed = path.join(projects, ".grant-secret.fixed.tmp");
+    fs.symlinkSync(target, fixed);
+    const lines = [];
+    const book = bookOf(M, { tempName: (f) => `${f}.fixed.tmp`, log: (l) => lines.push(l) });
+    expect(grantOne(book, p)).toMatchObject({ ok: false, status: 500 });
+    expect(fs.readFileSync(target, "utf8")).toBe("untouched");
+    expect(book.listGrants(p)).toEqual([]);
+    expect(book.key()).toBeNull();
+    // an existing 0666 regular file at that name is not reused either
+    fs.rmSync(fixed);
+    fs.writeFileSync(fixed, "mine", { mode: 0o666 });
+    expect(grantOne(book, p, "pypi.org")).toMatchObject({ ok: false, status: 500 });
+    expect(fs.readFileSync(fixed, "utf8")).toBe("mine");
+    expect(fs.existsSync(path.join(projects, ".grant-secret"))).toBe(false);
+  });
+  // Spec: Unblock.Safe
+  it("a destination replaced by a link before a write: the write is refused, memory is rolled back, the link's target is untouched; a failed temp file is removed", () => {
+    const p = world();
+    const book = bookOf(M);
+    expect(grantOne(book, p).ok).toBe(true);
+    const store = path.join(tmp, "state", "projects", "p1", "granted-settings.json");
+    const target = path.join(tmp, "leak.txt");
+    fs.writeFileSync(target, "untouched");
+    fs.rmSync(store);
+    fs.symlinkSync(target, store);
+    expect(grantOne(book, p, "pypi.org")).toMatchObject({ ok: false, status: 500 });
+    expect(fs.readFileSync(target, "utf8")).toBe("untouched");
+    expect(book.listGrants(p)).toHaveLength(1); // memory as it was
+    expect(fs.readdirSync(path.join(tmp, "state", "projects", "p1")).filter((n) => n.endsWith(".tmp"))).toEqual([]);
+  });
+});
+
+describe.each(MODULES)("S2 the secret file is checked at each grant (%s)", (_name, M) => {
+  const grantOne = (book, p, value) => {
+    book.request(p, req(AD, value), `t-${value}`);
+    const r = book.listRequests(p.id)[0];
+    return book.grant(r.requestId, r.nonce, r.hash, "abc");
+  };
+  const secretPath = () => path.join(tmp, "state", "projects", ".grant-secret");
+  // Spec: Unblock.Safe
+  it("a secret deleted while running is written again from memory: the next grant survives a restart", () => {
+    const p = world();
+    const book = bookOf(M);
+    expect(grantOne(book, p, "github.com").ok).toBe(true);
+    const key = Buffer.from(book.key());
+    fs.rmSync(secretPath());
+    expect(grantOne(book, p, "pypi.org").ok).toBe(true);
+    expect(fs.readFileSync(secretPath()).equals(key)).toBe(true);
+    expect(fs.statSync(secretPath()).mode & 0o777).toBe(0o600);
+    const fresh = bookOf(M);
+    fresh.load();
+    expect(fresh.listGrants(p)).toHaveLength(2);
+  });
+  // Spec: Unblock.Safe
+  it("a secret with other bytes, a link, or a second name: the grant is refused (409, latch) and nothing changes", () => {
+    const p = world();
+    const lines = [];
+    const book = bookOf(M, { log: (l) => lines.push(l) });
+    expect(grantOne(book, p, "github.com").ok).toBe(true);
+    const key = Buffer.from(book.key());
+    const attempt = (value) => grantOne(book, p, value);
+    fs.writeFileSync(secretPath(), Buffer.alloc(32, 9));
+    const a = attempt("pypi.org");
+    expect(a).toMatchObject({ ok: false, status: 409, latch: true });
+    expect(a.error).toMatch(/secret file/);
+    expect(fs.readFileSync(secretPath()).equals(Buffer.alloc(32, 9))).toBe(true); // not overwritten
+    fs.rmSync(secretPath());
+    fs.symlinkSync(path.join(tmp, "elsewhere"), secretPath());
+    expect(attempt("crates.io")).toMatchObject({ ok: false, status: 409, latch: true });
+    fs.rmSync(secretPath());
+    fs.writeFileSync(secretPath(), key);
+    fs.linkSync(secretPath(), path.join(tmp, "second-name"));
+    expect(attempt("crates.io")).toMatchObject({ ok: false, status: 409, latch: true });
+    expect(book.listGrants(p)).toHaveLength(1);
+    expect(lines.filter((l) => /secret file was changed/.test(l)).length).toBeGreaterThan(0);
+  });
+});
+
+describe("S2 / revoke through the bridge", () => {
+  // Spec: Unblock.Safe
+  it("a changed secret file refuses the grant with 409 and latches grants off until a restart", async () => {
+    ensureWorld();
+    const b = await start();
+    const r = await pend(b);
+    expect((await post(b, "/v1/settings/grant", { requestId: r.requestId, nonce: r.nonce, hash: r.hash })).status).toBe(200);
+    const r2 = await pend(b, req(AD, "pypi.org"));
+    fs.writeFileSync(path.join(stateDir, "projects", ".grant-secret"), Buffer.alloc(32, 5));
+    const bad = await post(b, "/v1/settings/grant", { requestId: r2.requestId, nonce: r2.nonce, hash: r2.hash });
+    expect(bad.status).toBe(409);
+    expect(bad.json.error).toMatch(/secret file/);
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).status).toBe(409); // latched
+    await turn(b, { prompt: "LISTTOOLS" });
+    expect(rows("mcpTools").at(-1).names).not.toContain("request_setting");
+  });
+  // Spec: Unblock.Safe
+  it("a revoke whose file write fails answers 500 with a plain reason (not 404) and changes nothing", async () => {
+    ensureWorld();
+    const b = await start();
+    const r = await pend(b);
+    const g = (await post(b, "/v1/settings/grant", { requestId: r.requestId, nonce: r.nonce, hash: r.hash })).json.grant;
+    const target = path.join(dir, "leak.txt");
+    fs.writeFileSync(target, "untouched");
+    fs.rmSync(storeFile());
+    fs.symlinkSync(target, storeFile());
+    const res = await post(b, "/v1/settings/revoke", { grantId: g.id });
+    expect(res.status).toBe(500);
+    expect(res.json.error).toMatch(/nothing was changed/);
+    expect(fs.readFileSync(target, "utf8")).toBe("untouched");
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).json.grants).toHaveLength(1);
+    expect((await post(b, "/v1/settings/revoke", { grantId: "0".repeat(24) })).status).toBe(404); // an unknown id is still 404
+  });
+});
+
+describe.each(MODULES)("S4 a project folder that is a link is not followed at load (%s)", (_name, M) => {
+  // Spec: Unblock.HandEdits
+  it("projects/<id> as a link to a folder holding a sealed store: that project is skipped with a warning", () => {
+    const p = world();
+    const lines = [];
+    const book = bookOf(M, { log: (l) => lines.push(l) });
+    book.request(p, req(AD, "github.com"), "t1");
+    const r = book.listRequests(p.id)[0];
+    expect(book.grant(r.requestId, r.nonce, r.hash, "abc").ok).toBe(true);
+    const projects = path.join(tmp, "state", "projects");
+    const away = path.join(tmp, "elsewhere-p1");
+    fs.renameSync(path.join(projects, p.id), away);
+    fs.symlinkSync(away, path.join(projects, p.id));
+    book.load();
+    expect(book.listGrants(p)).toEqual([]);
+    expect(lines.filter((l) => /not a plain folder/.test(l))).toHaveLength(1);
+    fs.rmSync(path.join(projects, p.id));
+    fs.renameSync(away, path.join(projects, p.id));
+    book.load();
+    expect(book.listGrants(p)).toHaveLength(1); // a real folder loads as before
+  });
+});
