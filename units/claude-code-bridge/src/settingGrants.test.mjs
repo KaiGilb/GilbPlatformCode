@@ -314,7 +314,7 @@ function ensureWorld() {
 }
 async function start({ full = false, opts = {} } = {}) {
   ensureWorld();
-  const b = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "work"), home, workspace: ws, stateDir, codePlatform: "darwin", codeEnvExtraPrefixes: ["FAKE_"], ...(full ? { fullAccess: true } : {}), env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...opts });
+  const b = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "work"), home, workspace: ws, stateDir, codePlatform: "darwin", codeEnvExtraPrefixes: ["FAKE_"], ...(full ? { fullAccess: true } : {}), env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, sandboxWritableAreas: [], ...opts });
   bridges.push(b);
   await b.start();
   const base = `http://127.0.0.1:${b.port}`;
@@ -1072,5 +1072,111 @@ describe.each(MODULES)("P6 more invisible characters and wide spaces in the reas
     expect(shown(book, p, "a\ufe00b\ufe0fc\u{e0100}d\u{e01ef}e")).toBe("abcde");
     expect(shown(book, p, "a\u00a0b\u2000\u200ac\u202fd\u205fe\u3000f")).toBe("a b c d e f");
     expect(shown(book, p, "a\u00a0\u00a0\u3000b")).toBe("a b");
+  });
+});
+
+// --- fix batch 1e (hacker round 4): Q1 a state folder under a writable place, a swapped parent, a FIFO as the store ----------------------------------
+import { spawnSync } from "node:child_process";
+
+describe("Q1 (a) a state folder under a place a sandboxed turn may write", () => {
+  // Spec: Unblock.Safe
+  it("grants are off at start when the state folder is under the temp folder (r4a's setup): no tool, routes 409, one warning", async () => {
+    ensureWorld();
+    const lines = [];
+    const sd = path.join(dir, "tmpzone", "sd", "state"); // `dir` is under os.tmpdir(), which the emitted settings allow writing in
+    const b = await start({ opts: { stateDir: sd, sandboxWritableAreas: undefined, log: (l) => lines.push(l) } });
+    await turn(b, { prompt: "LISTTOOLS" });
+    expect(rows("mcpTools").at(-1).names).not.toContain("request_setting");
+    for (const route of ["requests", "grants", "grant", "decline", "revoke"]) expect((await post(b, `/v1/settings/${route}`, { project: "p1" })).status, route).toBe(409);
+    expect(lines.filter((l) => /Setting grants are off/.test(l) && /can write/.test(l))).toHaveLength(1);
+  });
+  // Spec: Unblock.Safe
+  it("stateDirProblem refuses a state folder under any listed writable place, by text and by identity; one outside them is fine", () => {
+    const { stateDirProblem } = BUILT;
+    expect(stateDirProblem("/tmp/x/state", "/code", "/home", "linux", () => null, ["/tmp"])).toMatch(/can write/);
+    expect(stateDirProblem("/elsewhere/state", "/code", "/home", "linux", () => null, ["/tmp"])).toBe("");
+    const ids = new Map([["/code", "1:1"], ["/spelled/other/state", "9:9"], ["/spelled/other", "9:8"], ["/areas/t", "9:8"]]);
+    expect(stateDirProblem("/spelled/other/state", "/code", "/home", "linux", (p) => ids.get(p) ?? null, ["/areas/t"])).toMatch(/can write/);
+  });
+});
+
+describe("Q1 (b) the state folder and its projects folder must be the ones seen at start", () => {
+  // Spec: Unblock.HandEdits
+  it("a parent of the state folder swapped for another folder holding a sealed store: grants go off at the next use, nothing forged is listed or applied", async () => {
+    ensureWorld();
+    const lines = [];
+    const P = path.join(dir, "tmpzone", "sd");
+    const sd = path.join(P, "state");
+    const b = await start({ opts: { stateDir: sd, log: (l) => lines.push(l) } }); // the default override lets this placement through, to test (b) alone
+    const r = await pend(b);
+    expect((await post(b, "/v1/settings/grant", { requestId: r.requestId, nonce: r.nonce, hash: r.hash })).status).toBe(200);
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).json.grants).toHaveLength(1);
+    fs.renameSync(P, P + ".old"); // what a sandboxed turn could do under a writable area
+    const st = fs.statSync(path.join(ws, "p1"), { bigint: true });
+    const ref = { id: "p1", folderId: `${st.dev}:${st.ino}`, root: path.join(ws, "p1") };
+    const forged = BUILT.createGrantBook({ stateDir: sd, bridgeVersion: "x" }); // its own secret, a sealed entry for a socket in p1
+    expect(forged.request(ref, req(US, "forged.sock"), "t").status).toBe("pending");
+    const fr = forged.listRequests("p1")[0];
+    expect(forged.grant(fr.requestId, fr.nonce, fr.hash, "x").ok).toBe(true);
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).status).toBe(409);
+    await turn(b, { prompt: "hello" });
+    expect(JSON.stringify(lastSettings().sandbox.network.allowUnixSockets ?? [])).not.toContain("forged");
+    expect(lastSettings().sandbox.network.allowedDomains).not.toContain("github.com");
+    expect(lines.filter((l) => /no longer the folder the bridge started with/.test(l))).toHaveLength(1);
+  });
+  // Spec: Unblock.HandEdits
+  it("the projects folder swapped for a link or another folder turns grants off too", async () => {
+    ensureWorld();
+    const b = await start();
+    const r = await pend(b);
+    expect((await post(b, "/v1/settings/grant", { requestId: r.requestId, nonce: r.nonce, hash: r.hash })).status).toBe(200);
+    fs.renameSync(path.join(stateDir, "projects"), path.join(stateDir, "projects.old"));
+    fs.mkdirSync(path.join(stateDir, "projects"));
+    expect((await post(b, "/v1/settings/grants", { project: "p1" })).status).toBe(409);
+  });
+});
+
+describe("Q1 (c) a FIFO is not opened for reading", () => {
+  // Spec: Unblock.Safe
+  it.skipIf(process.platform === "win32")("a FIFO named as the store or the secret is treated as absent and does not stop the process", () => {
+    const d = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "setgrant-f-")));
+    try {
+      const builtUrl = new URL("../bridge/bridge.mjs", import.meta.url).href;
+      const script = `
+        import fs from "node:fs"; import path from "node:path"; import { execFileSync } from "node:child_process";
+        const { createGrantBook } = await import(process.argv[1]);
+        const sd = process.argv[2];
+        fs.mkdirSync(path.join(sd, "projects", "p1"), { recursive: true });
+        execFileSync("mkfifo", [path.join(sd, "projects", "p1", "granted-settings.json")]);
+        execFileSync("mkfifo", [path.join(sd, "projects", ".grant-secret")]);
+        const book = createGrantBook({ stateDir: sd, bridgeVersion: "x" });
+        const ref = { id: "p1", folderId: "1:1", root: process.argv[3] };
+        console.log(JSON.stringify([book.grantsFor(ref), book.key(), book.listGrants(ref)]));
+      `;
+      const r = spawnSync(process.execPath, ["--input-type=module", "-e", script, builtUrl, path.join(d, "state"), d], { timeout: 15000, encoding: "utf8" });
+      expect(r.error).toBeUndefined(); // a timeout would show here
+      expect(r.status).toBe(0);
+      expect(r.stdout.trim()).toBe("[[],null,[]]");
+    } finally {
+      fs.rmSync(d, { recursive: true, force: true });
+    }
+  }, 30000);
+});
+
+describe.each(MODULES)("Q1 more invisible characters (%s)", (_name, M) => {
+  // Spec: Unblock.Safe
+  it("U+180B-180F and U+1D159 are removed, U+1680 becomes a space, and the Thai letter U+0E33 stays", () => {
+    const p = world();
+    const book = bookOf(M);
+    const shown = (reason) => {
+      book.request(p, req(LB, true, reason), "t1");
+      const first = book.listRequests(p.id)[0];
+      if (first) book.decline(first.requestId);
+      return first ? first.reason : null;
+    };
+    const c = (n) => String.fromCodePoint(n);
+    expect(shown(`a${c(0x180b)}b${c(0x180c)}${c(0x180d)}c${c(0x180e)}d${c(0x180f)}e${c(0x1d159)}f`)).toBe("abcdef");
+    expect(shown(`a${c(0x1680)}b${c(0x1680)}${c(0x3000)}c`)).toBe("a b c");
+    expect(shown(`k${c(0x0e33)}m`)).toBe(`k${c(0x0e33)}m`);
   });
 });

@@ -177,8 +177,8 @@ export function validateSetting(setting: unknown, value: unknown, project: Proje
 function cleanReason(r: unknown): string | null {
   if (typeof r !== "string" || r.length > MAX_REASON) return null;
   const t = r
-    .replace(/[\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u2800\u3164\ufe00-\ufe0f\uffa0\u{e0100}-\u{e01ef}]+/gu, "")
-    .replace(/[\u0000-\u001f\u007f-\u009f\u00a0\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g, " ")
+    .replace(/[\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u2800\u3164\ufe00-\ufe0f\uffa0\u{e0100}-\u{e01ef}\u{1d159}]+/gu, "")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g, " ")
     .trim();
   return t === "" ? null : t;
 }
@@ -329,7 +329,8 @@ export function createGrantBook(o: GrantBookOptions) {
   function readFileSafe(file: string, max: number): Buffer | null {
     let fd = -1;
     try {
-      fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+      // O_NONBLOCK: opening a FIFO must not wait for a writer (that would stop the whole bridge); anything that is not a regular file is refused just below.
+      fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
       const st = fs.fstatSync(fd);
       if (!st.isFile()) return null;
       if (process.platform !== "win32" && st.nlink > 1) { warnOnce(file, "has more than one name (a hard link)"); return null; }

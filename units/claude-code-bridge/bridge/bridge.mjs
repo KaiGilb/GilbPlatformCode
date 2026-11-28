@@ -726,8 +726,8 @@ function cleanReason(r) {
     if (typeof r !== "string" || r.length > MAX_REASON)
         return null;
     const t = r
-        .replace(/[\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u2800\u3164\ufe00-\ufe0f\uffa0\u{e0100}-\u{e01ef}]+/gu, "")
-        .replace(/[\u0000-\u001f\u007f-\u009f\u00a0\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g, " ")
+        .replace(/[\p{Cf}\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u2800\u3164\ufe00-\ufe0f\uffa0\u{e0100}-\u{e01ef}\u{1d159}]+/gu, "")
+        .replace(/[\u0000-\u001f\u007f-\u009f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g, " ")
         .trim();
     return t === "" ? null : t;
 }
@@ -871,7 +871,8 @@ function createGrantBook(o) {
     function readFileSafe(file, max) {
         let fd = -1;
         try {
-            fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+            // O_NONBLOCK: opening a FIFO must not wait for a writer (that would stop the whole bridge); anything that is not a regular file is refused just below.
+            fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
             const st = fs.fstatSync(fd);
             if (!st.isFile())
                 return null;
@@ -3477,7 +3478,7 @@ function diskIdentity(p, follow) {
     }
 }
 /** The state folder may not sit inside the code folder or ~/Developer: a code turn can write both. Returns the refusal text, or "". */
-export function stateDirProblem(stateDir, workspace, home, platform = process.platform, identityOf = diskIdentity) {
+export function stateDirProblem(stateDir, workspace, home, platform = process.platform, identityOf = diskIdentity, writable = []) {
     const ci = platform === "darwin" || platform === "win32";
     const P = platform === "win32" ? path.win32 : path;
     // Case on a case-insensitive disk, and Unicode spelling (composed or decomposed: macOS keeps both names for one folder).
@@ -3519,6 +3520,10 @@ export function stateDirProblem(stateDir, workspace, home, platform = process.pl
         return `The state folder ${stateDir} is inside the code folder, where a code turn can change it. Choose a --state-dir outside it.`;
     if (within(P.join(home, "Developer")) || sameFolder(P.join(home, "Developer")))
         return `The state folder ${stateDir} is inside ~/Developer, where a code turn can change it. Choose a --state-dir outside it.`;
+    // Any other place the sandbox settings let a turn write (/tmp, the temp folders): a turn could swap a FOLDER ABOVE the state folder for its own.
+    for (const area of writable)
+        if (area && (within(area) || sameFolder(area)))
+            return `The state folder ${stateDir} is inside ${area}, a place a sandboxed code turn can write. Choose a --state-dir outside it.`;
     return "";
 }
 /** `--access-reset`, run by the person in a Terminal: clears the ON counters and the 24 h lock that three refusals in a row set. A running bridge reads the file at every request. */
@@ -4268,15 +4273,40 @@ export function createBridge(opts = {}) {
      * Why setting grants are off, or "": the state folder is inside the code folder (or ~/Developer), where a code turn can write, so the store could not be
      * kept away from it. The path is tested as written AND as the disk resolves it, and also off when it resolves somewhere else than at start.
      */
+    /** `dev:ino` of a path that is a plain directory (a link, a file or a missing path gives null; nothing is followed). */
+    const folderIdNow = (p) => {
+        try {
+            const st = fs.lstatSync(p);
+            return st.isDirectory() && st.ino ? `${st.dev}:${st.ino}` : null;
+        }
+        catch {
+            return null;
+        }
+    };
+    const stateIds = opts.stateDir ? [folderIdNow(stateRealAtStart), folderIdNow(storeFolder(stateRealAtStart))] : [null, null];
+    let stateSwapWarned = false;
     const grantsOff = () => {
         if (!opts.stateDir)
             return "";
         // Asked afresh at every use (no remembered "ok"): a link can be re-pointed at any time.
-        const why = stateDirProblem(path.resolve(opts.stateDir), workspace?.path || undefined, home, platform);
+        const areas = opts.sandboxWritableAreas ?? writableAreas(home, workspace?.path ?? "", sandboxTmpDirs());
+        const why = stateDirProblem(path.resolve(opts.stateDir), workspace?.path || undefined, home, platform, undefined, [...areas, ...areas.map((a) => (a ? resolveThroughLinks(a) : a))]);
         if (why)
             return why;
         if (resolveThroughLinks(path.resolve(opts.stateDir)) !== stateRealAtStart)
             return `The state folder ${opts.stateDir} now leads to a different place than when the bridge started (a link was changed), so no stored grant can be trusted. Restart the bridge.`;
+        // The state folder and its projects folder must still be the very folders seen at start (device:inode, looked at without following a link, and plain
+        // directories): a swap of the folder itself or of any folder above it shows here, whatever name the path still has.
+        const now = [folderIdNow(stateRealAtStart), folderIdNow(storeFolder(stateRealAtStart))];
+        if (stateIds[1] === null && now[1] !== null && now[0] === stateIds[0])
+            stateIds[1] = now[1]; // the bridge made it itself, on the first grant
+        if (now[0] === null || now[0] !== stateIds[0] || (stateIds[1] !== null && now[1] !== stateIds[1])) {
+            if (!stateSwapWarned) {
+                stateSwapWarned = true;
+                log(`Setting grants are off: the state folder ${opts.stateDir} (or its projects folder) is no longer the folder the bridge started with.`);
+            }
+            return `The state folder ${opts.stateDir} (or its projects folder) is no longer the folder the bridge started with, so no stored grant can be trusted. Restart the bridge.`;
+        }
         return "";
     };
     /** Does this turn get the request tool? A top code turn inside a project, running inside the OS sandbox. */
@@ -6537,6 +6567,8 @@ export function createBridge(opts = {}) {
         }
         if (route === "/v1/settings/grant") {
             const r = grantBook.grant(body.requestId, body.nonce, body.hash, callerKey(req));
+            if (r.ok)
+                grantsOff(); // the first grant made the projects folder: its identity is taken now, before anything else can touch it
             return r.ok ? json(res, 200, { grant: r.grant }) : json(res, r.status, { error: r.error });
         }
         if (route === "/v1/settings/decline")
